@@ -242,7 +242,7 @@ namespace Files.App.Views.Layouts
 		private void RefreshColumnReorderMenu()
 		{
 			if (!columnMenuCustomized || ColumnReorderMenu is null) return;
-			var order = CustomColumnOrder.Parse(CustomOptions.ColumnOrder);
+			var order = CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder);
 			var available = order.Where(index => !CustomColumns[index].IsHidden && !CustomColumns[index].UserCollapsed)
 				.Select(index => (Index: index, Label: (originalHeaderPositions
 					.FirstOrDefault(pair => pair.Key is DataGridHeader && pair.Value == (index + 1) * 2).Key as DataGridHeader)?.Header as string))
@@ -322,7 +322,7 @@ namespace Files.App.Views.Layouts
 		}
 		// The view shows the default column order from Settings.
 		private bool ColumnOrderMatchesSaved()
-			=> CustomColumnOrder.Parse(CustomOptions.ColumnOrder).SequenceEqual(CustomColumnOrder.Parse(
+			=> CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder).SequenceEqual(CustomizationColumnOrder.Parse(
 				CustomizationPreferences.Parse(UserSettingsService.AppearanceSettingsService.CustomizationPreferences).ColumnOrder));
 		private void QueueColumnMove(int index, int direction)
 		{
@@ -334,9 +334,9 @@ namespace Files.App.Views.Layouts
 			if (!customColumnsReady || !CustomOptions.ColumnsEnabled || !CustomOptions.CustomizationEnabled ||
 				(uint)index >= (uint)CustomColumns.Length || direction is not (-1 or 1)) return;
 			// Reordering changes this view only, like resizing; Restore to default undoes it.
-			var order = CustomColumnOrder.MoveShown(CustomColumnOrder.Parse(CustomOptions.ColumnOrder), index, direction,
+			var order = CustomizationColumnOrder.MoveShown(CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder), index, direction,
 				column => !CustomColumns[column].IsHidden && !CustomColumns[column].UserCollapsed);
-			columnOrderOverride = CustomColumnOrder.Serialize(order);
+			columnOrderOverride = CustomizationColumnOrder.Serialize(order);
 			ApplyCustomColumnOrder();
 			RefreshColumnReorderMenu();
 			RefreshColumnMenuState();

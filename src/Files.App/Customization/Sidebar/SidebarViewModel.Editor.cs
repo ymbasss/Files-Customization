@@ -68,7 +68,7 @@ namespace Files.App.ViewModels.UserControls
 		// Each Settings page (Customization > Sidebar) has its own panel, which works only while its page is shown. What the panels
 		// share is kept here, so a panel shown again in another tab picks up where the last one left off.
 		// The panel's Undo and Redo history, kept in memory until the app closes so it survives closing and reopening the panel.
-		internal CustomChangeHistory<EditorSnapshot> EditorHistory { get; } = new(snapshot => (snapshot.Sidebar.Length + snapshot.Options.Length) * 2L, 4 * 1024 * 1024);
+		internal CustomizationChangeHistory<EditorSnapshot> EditorHistory { get; } = new(snapshot => (snapshot.Sidebar.Length + snapshot.Options.Length) * 2L, 4 * 1024 * 1024);
 		// Preview rows collapsed by the user, and rows whose starting state has been decided.
 		internal HashSet<string> EditorCollapsed { get; } = new(StringComparer.OrdinalIgnoreCase);
 		internal HashSet<string> EditorPreviewFolderParents { get; } = new(StringComparer.OrdinalIgnoreCase);

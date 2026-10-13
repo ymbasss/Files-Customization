@@ -91,7 +91,7 @@ namespace Files.App.Views.Layouts
 				state = new ColumnRowState();
 				state.LayoutChanged = (_, _) =>
 				{
-					if (!applyingCustomColumnOrder) ApplyColumnRow(panel, CustomColumnOrder.Parse(CustomOptions.ColumnOrder));
+					if (!applyingCustomColumnOrder) ApplyColumnRow(panel, CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder));
 				};
 				originalColumnRows.Add(panel, state);
 				columnRows.Add(new(panel));
@@ -106,7 +106,7 @@ namespace Files.App.Views.Layouts
 			panel.Unloaded -= ColumnRow_Unloaded;
 			panel.Unloaded += ColumnRow_Unloaded;
 			if (applyingCustomColumnOrder) customColumnOrderPending = true;
-			else ApplyColumnRow(panel, CustomColumnOrder.Parse(CustomOptions.ColumnOrder));
+			else ApplyColumnRow(panel, CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder));
 		}
 		[DynamicWindowsRuntimeCast(typeof(StackPanel))]
 		private void ColumnRow_Unloaded(object sender, RoutedEventArgs args)
@@ -121,7 +121,7 @@ namespace Files.App.Views.Layouts
 			var path = element.GetBindingExpression(FrameworkElement.WidthProperty)?.ParentBinding.Path?.Path;
 			if (path is null || !path.StartsWith("ColumnsViewModel.", StringComparison.Ordinal)) return -1;
 			var property = path.Split('.')[1];
-			var index = Array.FindIndex(CustomColumnOrder.Keys, key => property == key + "Column");
+			var index = Array.FindIndex(CustomizationColumnOrder.Keys, key => property == key + "Column");
 			if (index >= 0) columnCells.Add(element, new(index));
 			return index;
 		}
@@ -162,7 +162,7 @@ namespace Files.App.Views.Layouts
 			applyingCustomColumnOrder = true;
 			try
 			{
-				var order = CustomColumnOrder.Parse(CustomOptions.ColumnOrder);
+				var order = CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder);
 				if (columnHeaderGrid is { } grid && originalHeaderDefinitions is { Length: 33 } definitions)
 				{
 					var desired = new List<ColumnDefinition> { definitions[0], definitions[1] };

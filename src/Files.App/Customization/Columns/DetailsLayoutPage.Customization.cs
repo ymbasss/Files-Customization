@@ -208,7 +208,7 @@ namespace Files.App.Views.Layouts
 		}
 		private DetailsLayoutColumnItem[]? customColumns;
 		private DetailsLayoutColumnItem[] CustomColumns => customColumns ??= ColumnsOf(ColumnsViewModel);
-		// A layout's columns, in CustomColumnOrder.Keys order.
+		// A layout's columns, in CustomizationColumnOrder.Keys order.
 		private static DetailsLayoutColumnItem[] ColumnsOf(ColumnsViewModel columns) =>
 		[
 			columns.NameColumn, columns.GitStatusColumn, columns.GitLastCommitDateColumn,

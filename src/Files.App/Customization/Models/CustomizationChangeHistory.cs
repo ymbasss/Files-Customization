@@ -3,11 +3,11 @@
 
 namespace Files.App.Data.Models
 {
-	internal sealed class CustomChangeHistory<T>
+	internal sealed class CustomizationChangeHistory<T>
 	{
 		private readonly Func<T, long>? measure;
 		private readonly long maximumWeight;
-		internal CustomChangeHistory(Func<T, long>? measure = null, long maximumWeight = long.MaxValue)
+		internal CustomizationChangeHistory(Func<T, long>? measure = null, long maximumWeight = long.MaxValue)
 		{
 			this.measure = measure;
 			this.maximumWeight = maximumWeight;

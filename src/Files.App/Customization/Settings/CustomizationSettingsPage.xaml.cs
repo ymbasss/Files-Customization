@@ -38,7 +38,7 @@ namespace Files.App.Views.Settings
 		// The default columns also change in Settings > Layout and, while Column details is off, from a column heading's menu (Set as default), so Column details follows them.
 		private void LayoutSettingsChanged(object? sender, PropertyChangedEventArgs args) => DispatcherQueue.TryEnqueue(RefreshControls);
 
-		// Every column, in CustomColumnOrder.Keys order: its heading, where it appears when that isn't every folder,
+		// Every column, in CustomizationColumnOrder.Keys order: its heading, where it appears when that isn't every folder,
 		// and whether it is shown before anything was changed.
 		private sealed record DefaultColumn(string Heading, string? Note, Func<ILayoutSettingsService, bool> Shown, Action<ILayoutSettingsService, bool>? SetShown, bool DefaultShown);
 		private static readonly DefaultColumn[] DefaultColumns =
@@ -59,12 +59,12 @@ namespace Files.App.Views.Settings
 			new(Strings.Size, null, s => s.ShowSizeColumn, (s, v) => s.ShowSizeColumn = v, true),
 			new(Strings.Status, Strings.CustomizationColumnsOnlyCloud, s => s.ShowSyncStatusColumn, (s, v) => s.ShowSyncStatusColumn = v, true)
 		];
-		private int[] ColumnOrder => CustomColumnOrder.Parse(Options.ColumnOrder);
+		private int[] ColumnOrder => CustomizationColumnOrder.Parse(Options.ColumnOrder);
 		// What Undo and Redo in Column details step through: which columns are shown, their order and the view options.
 		private sealed record ColumnDefaults(string Order, bool SizeToContent, bool FitToWidth, int Shown);
 		// Kept until the app closes, like the sidebar panel's history.
-		private static readonly CustomChangeHistory<ColumnDefaults> columnHistory = new();
-		private static ColumnDefaults FactoryColumns => new(CustomColumnOrder.Serialize(Enumerable.Range(0, DefaultColumns.Length)), false, false,
+		private static readonly CustomizationChangeHistory<ColumnDefaults> columnHistory = new();
+		private static ColumnDefaults FactoryColumns => new(CustomizationColumnOrder.Serialize(Enumerable.Range(0, DefaultColumns.Length)), false, false,
 			Enumerable.Range(0, DefaultColumns.Length).Where(index => DefaultColumns[index].DefaultShown).Sum(index => 1 << index));
 
 		private ColumnDefaults CaptureColumns()
@@ -72,7 +72,7 @@ namespace Files.App.Views.Settings
 			var layout = LayoutSettings;
 			var options = Options;
 			var shown = Enumerable.Range(0, DefaultColumns.Length).Where(index => DefaultColumns[index].Shown(layout)).Sum(index => 1 << index);
-			return new(CustomColumnOrder.Serialize(CustomColumnOrder.Parse(options.ColumnOrder)), layout.AutoSizeColumnsInDetailsLayout,
+			return new(CustomizationColumnOrder.Serialize(CustomizationColumnOrder.Parse(options.ColumnOrder)), layout.AutoSizeColumnsInDetailsLayout,
 				options.FitColumnsToWidth, shown);
 		}
 		private void ApplyColumns(ColumnDefaults columns)
@@ -333,7 +333,7 @@ namespace Files.App.Views.Settings
 					order.Insert(at, dragged);
 					draggedColumn = null;
 					if (!order.SequenceEqual(ColumnOrder))
-						ChangeColumns(() => Save(options => options with { ColumnOrder = CustomColumnOrder.Serialize(order) }));
+						ChangeColumns(() => Save(options => options with { ColumnOrder = CustomizationColumnOrder.Serialize(order) }));
 				};
 				rows[index] = row;
 				boxes[index] = box;

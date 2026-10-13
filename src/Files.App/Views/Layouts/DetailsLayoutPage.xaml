@@ -967,7 +967,7 @@
 												Source="{x:Bind IconOverlay, Mode=OneWay}"
 												Stretch="Uniform" />
 											<Viewbox
-												x:Name="ShortcutGlyphElement" helpers:CustomShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
+												x:Name="ShortcutGlyphElement" helpers:CustomizationShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
 												Width="10"
 												Height="10"
 												HorizontalAlignment="Left"

@@ -7,17 +7,17 @@ using WinRT;
 
 namespace Files.App.Helpers
 {
-	public static class CustomShortcutArrow
+	public static class CustomizationShortcutArrow
 	{
 		// The shortcut badge of an item in a folder view.
 		public static readonly DependencyProperty ItemPathProperty = DependencyProperty.RegisterAttached(
-			"ItemPath", typeof(string), typeof(CustomShortcutArrow), new PropertyMetadata(null, Changed));
+			"ItemPath", typeof(string), typeof(CustomizationShortcutArrow), new PropertyMetadata(null, Changed));
 		public static string? GetItemPath(DependencyObject element) => (string?)element.GetValue(ItemPathProperty);
 		public static void SetItemPath(DependencyObject element, string? value) => element.SetValue(ItemPathProperty, value);
 
 		// The shortcut badge of an item in the search suggestions under the address bar.
 		public static readonly DependencyProperty SuggestionPathProperty = DependencyProperty.RegisterAttached(
-			"SuggestionPath", typeof(string), typeof(CustomShortcutArrow), new PropertyMetadata(null, Changed));
+			"SuggestionPath", typeof(string), typeof(CustomizationShortcutArrow), new PropertyMetadata(null, Changed));
 		public static string? GetSuggestionPath(DependencyObject element) => (string?)element.GetValue(SuggestionPathProperty);
 		public static void SetSuggestionPath(DependencyObject element, string? value) => element.SetValue(SuggestionPathProperty, value);
 
@@ -70,7 +70,7 @@ namespace Files.App.Helpers
 			applied = true;
 			var suggestion = GetSuggestionPath(element);
 			var hide = (suggestion is null || options.ShortcutArrowSearchSuggestions) &&
-				CustomShortcutArrowPolicy.HideArrow(options.ShortcutArrowMode, suggestion ?? GetItemPath(element),
+				CustomizationShortcutArrowPolicy.HideArrow(options.ShortcutArrowMode, suggestion ?? GetItemPath(element),
 					Constants.UserEnvironmentPaths.DesktopPath, Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
 					options.ShortcutArrowDesktopSubfolders);
 			if (hide) element.Opacity = 0;

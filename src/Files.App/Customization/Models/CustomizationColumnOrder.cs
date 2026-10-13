@@ -3,7 +3,7 @@
 
 namespace Files.App.Data.Models
 {
-	internal static class CustomColumnOrder
+	internal static class CustomizationColumnOrder
 	{
 		internal static readonly string[] Keys =
 		[

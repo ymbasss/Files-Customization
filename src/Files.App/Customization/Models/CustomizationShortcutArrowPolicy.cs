@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Files.App.Data.Models
 {
-	internal static class CustomShortcutArrowPolicy
+	internal static class CustomizationShortcutArrowPolicy
 	{
 		// Mode 1 hides badges of shortcuts on the Desktop (also in its folders with includeSubfolders), mode 2 everywhere.
 		internal static bool HideArrow(int mode, string? itemPath, string desktop, string commonDesktop, bool includeSubfolders = false)

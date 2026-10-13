@@ -38,7 +38,7 @@ namespace Files.App.ViewModels.UserControls
 		// Rows take their inset from the settings flyout's content padding.
 		private readonly StackPanel defaults = new() { Spacing = 8 };
 		// Kept by the sidebar, so Undo and Redo survive closing and reopening the panel until the app closes.
-		private CustomChangeHistory<EditorSnapshot> history => owner.EditorHistory;
+		private CustomizationChangeHistory<EditorSnapshot> history => owner.EditorHistory;
 		// Shared with the other panel (window or Settings), so both show the same rows expanded.
 		private HashSet<string> collapsed => owner.EditorCollapsed;
 		private HashSet<string> previewFolderParents => owner.EditorPreviewFolderParents;

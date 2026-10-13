@@ -34,15 +34,15 @@ Paths are relative to `src\`. User documentation for every feature is in `FEATUR
 | `SidebarCustomizationState.cs` | Saved per-item sidebar entries (label, icon, size, order, group, hidden, expansion). |
 | `SidebarCustomizationStyle.cs` | Shared appearance and visibility rules, including the three-state Show icons and Show expansion arrows options. |
 | `SidebarPreviewHierarchy.cs` | Which rows the panel preview shows, based on which rows are collapsed. |
-| `CustomChangeHistory.cs` | Undo and Redo history, with a memory limit. |
-| `CustomColumnOrder.cs` | Saved column order. |
+| `CustomizationChangeHistory.cs` | Undo and Redo history, with a memory limit. |
+| `CustomizationColumnOrder.cs` | Saved column order. |
 | `ColumnWidthFitter.cs` | Column width calculations for fitting to the window and fitting to content. |
-| `CustomShortcutArrowPolicy.cs` | Decides where shortcut badges are hidden. |
+| `CustomizationShortcutArrowPolicy.cs` | Decides where shortcut badges are hidden. |
 
 ### Services (`Files.App\Customization\Services\`)
 | File | Purpose |
 |---|---|
-| `CustomShortcutArrow.cs` | Attached properties that hide shortcut badges in layouts and search suggestions. |
+| `CustomizationShortcutArrow.cs` | Attached properties that hide shortcut badges in layouts and search suggestions. |
 | `SettingsValueEditing.cs` | Enter confirms and Escape cancels text and number edits; clicking elsewhere finishes the edit. |
 
 ### Column details (`Files.App\Customization\Columns\`)
