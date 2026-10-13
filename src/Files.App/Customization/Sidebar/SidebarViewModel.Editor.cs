@@ -352,7 +352,7 @@ namespace Files.App.ViewModels.UserControls
 				if (seen.Add(key)) rows.Add(new(key, entry.Label is { Length: > 0 } name ? name : section.Item2.GetLocalizedResource(),
 					VisualRootKey, 0, true, false, false, false, entry with { Hidden = entry.Hidden || !EditorSectionVisible(section.Item1) }));
 			}
-			if (!seen.Contains(VisualKey(SettingsSidebarItem))) Visit([SettingsSidebarItem], EditorFooterKey, 0);
+			if (!seen.Contains(VisualKey(SettingsSidebarItem))) Visit(new[] { SettingsSidebarItem }, EditorFooterKey, 0);
 			foreach (var saved in state.Entries.Values.Where(entry => !seen.Contains(entry.Key) && !IsVisualSubFolderKey(entry.Key) &&
 				!entry.Key.StartsWith(EditorFolderPrefix, StringComparison.Ordinal)))
 			{

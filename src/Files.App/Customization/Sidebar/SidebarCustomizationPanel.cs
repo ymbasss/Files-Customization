@@ -867,6 +867,7 @@ namespace Files.App.ViewModels.UserControls
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(ComboBoxItem))]
+		[DynamicWindowsRuntimeCast(typeof(ImageIcon))]
 		private void BuildGroupIconPicker(EditorRow row)
 		{
 			var layout = new Grid { ColumnSpacing = 8 };

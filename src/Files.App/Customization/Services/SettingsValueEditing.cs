@@ -98,6 +98,7 @@ namespace Files.App.Helpers
 				return false;
 			}
 
+			[DynamicWindowsRuntimeCast(typeof(AutoSuggestBox))]
 			[DynamicWindowsRuntimeCast(typeof(NumberBox))]
 			[DynamicWindowsRuntimeCast(typeof(TextBox))]
 			private Control? Editor(DependencyObject? element, out TextBox? input)
