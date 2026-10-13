@@ -173,6 +173,8 @@ namespace Files.App.ViewModels.UserControls
 
 		internal void TrackSidebarItem(INavigationControlItem? item)
 		{
+			if (item is not null)
+				ApplyVisualPreferences(item);
 			if (item is null || item is not INotifyPropertyChanged inpc)
 				return;
 			if (!trackedItems.Add(inpc))
@@ -222,6 +224,8 @@ namespace Files.App.ViewModels.UserControls
 		{
 			if (sender is not INavigationControlItem item)
 				return;
+			if (e.PropertyName == nameof(LocationItem.Children) && SidebarCustomizationEnabled)
+				HookChildrenCollection(item);
 			switch (e.PropertyName)
 			{
 				case nameof(LocationItem.IsExpanded):
@@ -235,6 +239,8 @@ namespace Files.App.ViewModels.UserControls
 
 		private void TrackedChildren_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
 		{
+			if (visualReorderDepth > 0)
+				return;
 			// Drop subscriptions + tab-state keys for items leaving the collection so a long-running session with frequent filesystem churn doesn't grow the tracker HashSets indefinitely.
 			if (e.OldItems is not null)
 			{
@@ -259,6 +265,8 @@ namespace Files.App.ViewModels.UserControls
 				try { added.IsExpanded = true; }
 				finally { Interlocked.Decrement(ref applyingTabStateDepth); }
 			}
+			if (SidebarCustomizationEnabled)
+				PlaceAddedVisualItems(sender, e.NewItems);
 		}
 
 		private void CaptureExpansionToCurrentTab(INavigationControlItem item)

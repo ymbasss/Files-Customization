@@ -15,6 +15,7 @@ namespace Files.App.Controls
 	public sealed partial class SidebarView : UserControl
 	{
 		private const double COMPACT_MAX_WIDTH = 200;
+		public const string ReorderDataFormat = "Files.Sidebar.LayoutItem";
 
 		public event EventHandler<ItemInvokedEventArgs>? ItemInvoked;
 		public event EventHandler<ItemContextInvokedArgs>? ItemContextInvoked;
@@ -37,8 +38,12 @@ namespace Files.App.Controls
 
 		internal void RaiseItemInvoked(SidebarItem item, PointerUpdateKind pointerUpdateKind)
 		{
+			// A preview selects any row, separators, gaps and group headings included.
+			if (!IsPreview && item.Item is ISidebarItemAppearanceModel { SidebarDecoration: true }) return;
 			// Only true group headers (e.g. Pinned, Drives) suppress selection; leaves-with-children (tree-view folder rows) navigate AND get selected.
-			if (item.Item is null || (item.IsGroupHeader && item.Item.IsLeafWithChildren != true)) return;
+			if (item.Item is null || (!IsPreview && item.IsGroupHeader && item.Item.IsLeafWithChildren != true)) return;
+			// Preview rows the panel can't edit (inner folders) are never selected.
+			if (IsPreview && PreviewDragKey(item.Item) is null) return;
 
 			SelectedItem = item.Item;
 			ItemInvoked?.Invoke(item, new(pointerUpdateKind));
@@ -110,7 +115,8 @@ namespace Files.App.Controls
 
 		private void UpdateOpenPaneLengthColumn()
 		{
-			if (DisplayMode != SidebarDisplayMode.Expanded)
+			// A preview's pane always fills its space (see EnablePreview).
+			if (DisplayMode != SidebarDisplayMode.Expanded || IsPreview)
 				return;
 
 			PaneColumnDefinition.Width = new GridLength(OpenPaneLength);

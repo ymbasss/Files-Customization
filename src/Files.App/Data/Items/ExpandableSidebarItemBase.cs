@@ -15,7 +15,7 @@ namespace Files.App.Data.Items
 	/// subfolder load on first expansion. Subclasses provide the path + child collection via
 	/// abstract members and keep their own Children getter (Home / non-expandable cases vary).
 	/// </summary>
-	public abstract partial class ExpandableSidebarItemBase : ObservableObject
+	public abstract partial class ExpandableSidebarItemBase : ObservableObject, ISidebarItemAppearanceModel, ISidebarItemReorderModel
 	{
 		protected abstract string ExpansionPath { get; }
 		protected abstract BulkConcurrentObservableCollection<INavigationControlItem> EnsureChildItems();
@@ -55,6 +55,7 @@ namespace Files.App.Data.Items
 			get => isExpanded;
 			set
 			{
+				value = SidebarExpansionLock switch { 1 => true, 2 => false, _ => value };
 				if (!SetProperty(ref isExpanded, value))
 					return;
 

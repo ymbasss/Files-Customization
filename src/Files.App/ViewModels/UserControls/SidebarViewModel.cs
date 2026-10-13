@@ -333,6 +333,8 @@ namespace Files.App.ViewModels.UserControls
 			EjectDeviceCommand = new RelayCommand(EjectDevice);
 			OpenPropertiesCommand = new RelayCommand<FlyoutBase>(OpenProperties);
 			ReorderItemsCommand = new AsyncRelayCommand(ReorderItemsAsync);
+			if (SidebarCustomizationEnabled)
+				RefreshVisualSidebar();
 		}
 
 		private Task<LocationItem?> CreateItemHomeAsync()
@@ -361,6 +363,7 @@ namespace Files.App.ViewModels.UserControls
 
 				item.Icon = null;
 				item.Icon = new BitmapImage(new Uri(uri));
+				RefreshVisualSectionIcon(item);
 			}
 		}
 
@@ -387,6 +390,7 @@ namespace Files.App.ViewModels.UserControls
 					_ => throw new ArgumentOutOfRangeException(nameof(sectionType), sectionType, "The sidebar section type is not supported.")
 				};
 				await SyncSidebarItemsAsync(section, getElements, e);
+				RestoreVisualPlacements();
 			});
 		}
 
@@ -396,7 +400,7 @@ namespace Files.App.ViewModels.UserControls
 
 		private async Task SyncSidebarItemsAsync(LocationItem section, Func<IReadOnlyList<INavigationControlItem>> getElements, NotifyCollectionChangedEventArgs e)
 		{
-			var childItems = section.ChildItems!;
+			var childItems = SidebarCustomizationEnabled ? section.ChildItems ??= [] : section.ChildItems!;
 
 			switch (e.Action)
 			{
@@ -434,6 +438,8 @@ namespace Files.App.ViewModels.UserControls
 								expandable.StopWatchingSubfoldersAndDescendants();
 							childItems.Remove(match);
 						}
+						if (e.Action == NotifyCollectionChangedAction.Remove)
+							RemoveSectionItems(section, oldItems);
 						if (e.Action != NotifyCollectionChangedAction.Remove)
 						{
 							goto case NotifyCollectionChangedAction.Add;
@@ -450,13 +456,14 @@ namespace Files.App.ViewModels.UserControls
 						}
 						foreach (INavigationControlItem elem in childItems.ToList())
 						{
-							if (!getElements().Any(x => x.Path == elem.Path))
+							if (elem is not SidebarVisualDecoration and not SidebarVisualShortcut && !getElements().Any(x => x.Path == elem.Path))
 							{
 								if (elem is ExpandableSidebarItemBase expandable)
 									expandable.StopWatchingSubfoldersAndDescendants();
 								childItems.Remove(elem);
 							}
 						}
+						RemoveMovedSectionItems(section, path => !getElements().Any(x => x.Path == path));
 
 						break;
 					}
@@ -468,7 +475,9 @@ namespace Files.App.ViewModels.UserControls
 
 		private async Task AddElementToSectionAsync(INavigationControlItem elem, LocationItem section, int index = -1)
 		{
-			var childItems = section.ChildItems!;
+			var childItems = SidebarCustomizationEnabled ? section.ChildItems ??= [] : section.ChildItems!;
+			if (IsPlacedOutsideSection(elem, childItems))
+				return;
 
 			if (elem is LibraryLocationItem lib)
 			{
@@ -523,6 +532,7 @@ namespace Files.App.ViewModels.UserControls
 			TrackSidebarItem(section);
 			ApplyTabStateToNewlyAddedItem(elem);
 			ApplyTabStateToNewlyAddedItem(section);
+			CustomizeAddedSectionItem(elem, section, childItems);
 		}
 
 		private static async Task ApplyTreeViewExpandabilityAsync(INavigationControlItem child, SectionType parentSection)
@@ -544,6 +554,8 @@ namespace Files.App.ViewModels.UserControls
 
 		private LocationItem? GetSection(SectionType sectionType)
 		{
+			if (SidebarCustomizationEnabled)
+				return FindVisualSection(sectionType);
 			return sidebarItems.FirstOrDefault(x => x.Section == sectionType) as LocationItem;
 		}
 
@@ -560,49 +572,49 @@ namespace Files.App.ViewModels.UserControls
 					break;
 
 				case SectionType.Pinned:
-					if (ShowPinnedFoldersSection == false)
+					if (ShowPinnedFoldersSection == false && !KeepsSwitchedOffSections)
 						break;
 					section = BuildSection(Strings.Pinned.GetLocalizedResource(), sectionType, new ContextMenuOptions { ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.Library:
-					if (ShowLibrarySection == false)
+					if (ShowLibrarySection == false && !KeepsSwitchedOffSections)
 						break;
 					section = BuildSection(Strings.SidebarLibraries.GetLocalizedResource(), sectionType, new ContextMenuOptions { IsLibrariesHeader = true, ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.Drives:
-					if (ShowDrivesSection == false)
+					if (ShowDrivesSection == false && !KeepsSwitchedOffSections)
 						break;
 					section = BuildSection(Strings.Drives.GetLocalizedResource(), sectionType, new ContextMenuOptions { ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.CloudDrives:
-					if (ShowCloudDrivesSection == false || CloudDrivesManager.Drives.Any() == false)
+					if ((ShowCloudDrivesSection == false && !KeepsSwitchedOffSections) || CloudDrivesManager.Drives.Any() == false)
 						break;
 					section = BuildSection(Strings.SidebarCloudDrives.GetLocalizedResource(), sectionType, new ContextMenuOptions { ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.Network:
-					if (!ShowNetworkSection)
+					if (!ShowNetworkSection && !KeepsSwitchedOffSections)
 						break;
 					section = BuildSection(Strings.Network.GetLocalizedResource(), sectionType, new ContextMenuOptions { ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.WSL:
-					if (ShowWslSection == false || WSLDistroManager.Distros.Any() == false)
+					if ((ShowWslSection == false && !KeepsSwitchedOffSections) || WSLDistroManager.Distros.Any() == false)
 						break;
 					section = BuildSection(Strings.WSL.GetLocalizedResource(), sectionType, new ContextMenuOptions { ShowHideSection = true }, false);
 					section.IsHeader = true;
 					break;
 
 				case SectionType.FileTag:
-					if (!ShowFileTagsSection)
+					if (!ShowFileTagsSection && !KeepsSwitchedOffSections)
 						break;
 					section = BuildSection(Strings.FileTags.GetLocalizedResource(), sectionType, new ContextMenuOptions { IsTagsHeader = true, ShowHideSection = true }, false);
 					section.IsHeader = true;
@@ -637,6 +649,7 @@ namespace Files.App.ViewModels.UserControls
 		{
 			var index = SectionOrder.TakeWhile(x => x != section.Section).Select(x => sidebarItems.Any(item => item.Section == x) ? 1 : 0).Sum();
 			sidebarItems.Insert(Math.Min(index, sidebarItems.Count), section);
+			CustomizeAddedSection(section);
 		}
 
 		public async Task UpdateSectionVisibilityAsync(SectionType sectionType, bool show)
@@ -658,9 +671,13 @@ namespace Files.App.ViewModels.UserControls
 				};
 
 				Manager_DataChanged(sectionType, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+				if (KeepsSwitchedOffSections)
+					RefreshSectionVisibility(sectionType);
 
 				await action();
 			}
+			else if (KeepsSwitchedOffSections)
+				RefreshSectionVisibility(sectionType);
 			else
 			{
 				sidebarItems.Remove(sidebarItems.FirstOrDefault(x => x.Section == sectionType));
@@ -671,6 +688,10 @@ namespace Files.App.ViewModels.UserControls
 		{
 			switch (e.SettingName)
 			{
+				case nameof(UserSettingsService.AppearanceSettingsService.SidebarCustomization):
+				case nameof(UserSettingsService.AppearanceSettingsService.CustomizationPreferences):
+					await HandleCustomSidebarSettingChangedAsync(e.SettingName);
+					break;
 				case nameof(UserSettingsService.AppearanceSettingsService.IsSidebarOpen):
 					if (UserSettingsService.AppearanceSettingsService.IsSidebarOpen != IsSidebarOpen)
 					{
@@ -826,6 +847,8 @@ namespace Files.App.ViewModels.UserControls
 		public async void HandleItemInvokedAsync(object item, PointerUpdateKind pointerUpdateKind)
 		{
 			if (item is not INavigationControlItem navigationControlItem) return;
+			if (HandleVisualItemInvoked(navigationControlItem)) return;
+			var visualTarget = VisualTarget(navigationControlItem);
 			var navigationPath = item as string;
 
 			if (await DriveHelpers.CheckEmptyDrive(navigationPath))
@@ -833,7 +856,7 @@ namespace Files.App.ViewModels.UserControls
 
 			var ctrlPressed = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down);
 			var middleClickPressed = pointerUpdateKind == PointerUpdateKind.MiddleButtonReleased;
-			if (string.Equals(navigationControlItem.Path, "Settings", StringComparison.OrdinalIgnoreCase))
+			if (string.Equals(visualTarget, "Settings", StringComparison.OrdinalIgnoreCase))
 			{
 				if (ctrlPressed || middleClickPressed)
 				{
@@ -850,19 +873,21 @@ namespace Files.App.ViewModels.UserControls
 				middleClickPressed) &&
 				navigationControlItem.Path is not null)
 			{
-				await NavigationHelpers.OpenPathInNewTab(navigationControlItem.Path);
+				await NavigationHelpers.OpenPathInNewTab(visualTarget ?? navigationControlItem.Path);
 				return;
 			}
 
 			// Type of page to navigate
 			Type? sourcePageType = null;
 
-			switch (navigationControlItem.ItemType)
+			var itemType = navigationControlItem is SidebarVisualShortcut && visualTarget?.StartsWith("tag:", StringComparison.Ordinal) == true
+				? NavigationControlItemType.FileTag : navigationControlItem.ItemType;
+			switch (itemType)
 			{
 				case NavigationControlItemType.Location:
 					{
 						// Get the path of the invoked item
-						var ItemPath = navigationControlItem.Path;
+						var ItemPath = visualTarget;
 
 						if (ItemPath is null)
 							ItemPath = navigationControlItem.Text;
@@ -875,7 +900,7 @@ namespace Files.App.ViewModels.UserControls
 						}
 						else
 						{
-							navigationPath = navigationControlItem.Path;
+							navigationPath = visualTarget;
 						}
 						break;
 					}
@@ -883,7 +908,7 @@ namespace Files.App.ViewModels.UserControls
 				case NavigationControlItemType.FileTag:
 					if (PaneHolder?.ActivePane is IShellPage shp)
 					{
-						var tagPath = navigationControlItem.GetRequiredPath();
+						var tagPath = visualTarget ?? navigationControlItem.GetRequiredPath();
 						shp.NavigateToPath(tagPath, new NavigationArguments()
 						{
 							IsSearchResultPage = true,
@@ -897,7 +922,7 @@ namespace Files.App.ViewModels.UserControls
 
 				default:
 					{
-						navigationPath = navigationControlItem.Path;
+						navigationPath = visualTarget;
 						break;
 					}
 			}
@@ -1155,7 +1180,7 @@ namespace Files.App.ViewModels.UserControls
 					Text = Strings.ReorderSidebarItemsDialogText.GetLocalizedResource(),
 					Glyph = "\uE8D8",
 					Command = ReorderItemsCommand,
-					ShowItem = isPinnedItem || item.Section is SectionType.Pinned
+					ShowItem = (isPinnedItem || item.Section is SectionType.Pinned) && !SidebarCustomizationEnabled
 				},
 				new ContextMenuFlyoutItemViewModel()
 				{
@@ -1212,6 +1237,7 @@ namespace Files.App.ViewModels.UserControls
 
 		public async Task HandleItemDragOverAsync(ItemDragOverEventArgs args)
 		{
+			if (await HandleVisualDragOverAsync(args)) return;
 			if (args.DropTarget is LocationItem locationItem)
 				await HandleLocationItemDragOverAsync(locationItem, args);
 			else if (args.DropTarget is DriveItem driveItem)
@@ -1385,6 +1411,7 @@ namespace Files.App.ViewModels.UserControls
 
 		public async Task HandleItemDroppedAsync(ItemDroppedEventArgs args)
 		{
+			if (await HandleVisualDropAsync(args)) return;
 			if (args.DropTarget is LocationItem locationItem)
 				await HandleLocationItemDroppedAsync(locationItem, args);
 			else if (args.DropTarget is DriveItem driveItem)

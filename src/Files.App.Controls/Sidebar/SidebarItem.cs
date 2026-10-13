@@ -47,11 +47,11 @@ namespace Files.App.Controls
 						args.Handled = true;
 						break;
 					case Windows.System.VirtualKey.Right when HasChildren && CollapseEnabled && !IsExpanded:
-						IsExpanded = true;
+						ToggleExpandedByUser();
 						args.Handled = true;
 						break;
 					case Windows.System.VirtualKey.Left when HasChildren && CollapseEnabled && IsExpanded:
-						IsExpanded = false;
+						ToggleExpandedByUser();
 						args.Handled = true;
 						break;
 				}
@@ -71,13 +71,16 @@ namespace Files.App.Controls
 		[DynamicWindowsRuntimeCast(typeof(ItemsRepeater))]
 		protected override void OnApplyTemplate()
 		{
+			ReleaseSidebarTemplateParts();
 			base.OnApplyTemplate();
+			UpdateItemAppearanceOnTemplate();
 
 			if (!isTemplateWired)
 			{
 				isTemplateWired = true;
 				if (GetTemplateChild("ElementBorder") is Border border)
 				{
+					wiredBorder = border;
 					border.PointerEntered += ItemBorder_PointerEntered;
 					border.PointerExited += ItemBorder_PointerExited;
 					border.PointerCanceled += ItemBorder_PointerCanceled;
@@ -91,11 +94,15 @@ namespace Files.App.Controls
 					border.IsTabStop = false;
 				}
 				if (GetTemplateChild("ChevronContainer") is Border chevronContainer)
+				{
+					wiredChevron = chevronContainer;
 					chevronContainer.PointerPressed += ChevronContainer_PointerPressed;
+				}
 				if (GetTemplateChild("FlyoutChildrenPresenter") is ItemsRepeater flyoutRepeater)
 				{
+					wiredFlyout = flyoutRepeater;
 					flyoutRepeater.ElementPrepared += FlyoutChildrenPresenter_ElementPrepared;
-					flyoutRepeater.ItemsSource = Item?.Children;
+					flyoutRepeater.ItemsSource = SidebarFlyoutChildren();
 				}
 			}
 
@@ -135,7 +142,8 @@ namespace Files.App.Controls
 			UpdateFlyoutChildrenSource();
 			UpdateExpansionState();
 			ReevaluateSelection();
-			CanDrag = Item?.Path is string path && Path.IsPathRooted(path);
+			CanDrag = CanDragItem();
+			UpdateItemAppearance();
 		}
 
 		private void UpdateItemPresentation()
@@ -146,14 +154,14 @@ namespace Files.App.Controls
 			ToolTip = presentation?.ToolTip;
 			Icon = presentation?.IconElement;
 			Decorator = presentation?.ItemDecorator;
-			IsExpanded = Item?.IsExpanded ?? true;
+			IsExpanded = ItemExpansion;
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(ItemsRepeater))]
 		private void UpdateFlyoutChildrenSource()
 		{
 			if (GetTemplateChild("FlyoutChildrenPresenter") is ItemsRepeater flyoutRepeater)
-				flyoutRepeater.ItemsSource = Item?.Children;
+				flyoutRepeater.ItemsSource = SidebarFlyoutChildren();
 		}
 
 		private void HookupOwners()
@@ -206,6 +214,11 @@ namespace Files.App.Controls
 
 		private void Item_PropertyChanged(object? sender, PropertyChangedEventArgs e)
 		{
+			if (IsSidebarAppearanceProperty(e.PropertyName))
+			{
+				UpdateItemAppearance();
+				return;
+			}
 			switch (e.PropertyName)
 			{
 				case null:
@@ -231,13 +244,15 @@ namespace Files.App.Controls
 				case nameof(ISidebarItemPresentationModel.IconElement):
 					if (UseItemPresentation)
 						Icon = (Item as ISidebarItemPresentationModel)?.IconElement;
+					UpdateItemAppearance();
 					break;
 				case nameof(ISidebarItemPresentationModel.ItemDecorator):
 					if (UseItemPresentation)
 						Decorator = (Item as ISidebarItemPresentationModel)?.ItemDecorator;
+					UpdateItemAppearance();
 					break;
 				case nameof(ISidebarItemModel.IsExpanded):
-					if (UseItemPresentation)
+					if (UseItemPresentation && Owner?.IsPreview != true)
 						IsExpanded = Item?.IsExpanded ?? true;
 					UpdateExpansionState();
 					break;
@@ -256,6 +271,8 @@ namespace Files.App.Controls
 
 		private void SidebarItem_DragStarting(UIElement sender, DragStartingEventArgs args)
 		{
+			if (TryStartPreviewDrag(args) || TryStartRearrangeDrag(args))
+				return;
 			if (Item?.Path is not string dragPath || !Path.IsPathRooted(dragPath))
 				return;
 
@@ -285,6 +302,7 @@ namespace Files.App.Controls
 		[DynamicWindowsRuntimeCast(typeof(FrameworkElement))]
 		private void SetFlyoutOpen(bool isOpen = true)
 		{
+			if (isOpen && Item is ISidebarItemAppearanceModel { SidebarExpansionLock: 2 }) return;
 			if (Item?.Children is null) return;
 
 			var flyoutOwner = (GetTemplateChild("ElementGrid") as FrameworkElement)!;
@@ -307,6 +325,7 @@ namespace Files.App.Controls
 		{
 			ReevaluateSelection();
 			UpdateExpansionState();
+			UpdateItemAppearance();
 			if (DisplayMode == SidebarDisplayMode.Compact && !HasChildren)
 			{
 				SetFlyoutOpen(false);
@@ -321,7 +340,8 @@ namespace Files.App.Controls
 			// Leaves-with-children (tree-view folder rows) can be selected themselves as well as host a selected descendant.
 			var isLeafWithChildren = Item?.IsLeafWithChildren == true;
 			var selected = Owner?.SelectedItem;
-			if (!IsGroupHeader || isLeafWithChildren)
+			// In a preview every row, group headings included, can be the selected item.
+			if (!IsGroupHeader || isLeafWithChildren || Owner?.IsPreview == true)
 			{
 				// Item-null guard avoids the null==null match that paints cleared/recycled containers as selected when SelectedItem is also null (e.g. after collapsing the section that held the active path).
 				IsSelected = Item is not null && Item == selected;
@@ -362,6 +382,8 @@ namespace Files.App.Controls
 
 		internal void Clicked(PointerUpdateKind pointerUpdateKind)
 		{
+			if (TryPreviewClick(pointerUpdateKind) || TryOpenCompactGroupFlyout())
+				return;
 			// Section headers (Pinned, Drives, ...) toggle expansion on row click since they have no navigation target. Tree-view folder rows (leaves-with-children) only navigate — their expansion is reserved for the chevron click target.
 			if (IsGroupHeader && Item?.IsLeafWithChildren != true)
 			{
@@ -394,9 +416,10 @@ namespace Files.App.Controls
 
 		private bool TryToggleExpansion()
 		{
+			if (Item is ISidebarItemAppearanceModel { SidebarExpansionLock: not 0 }) return true;
 			if (!HasChildren || !CollapseEnabled)
 				return false;
-			IsExpanded = !IsExpanded;
+			ToggleExpandedByUser();
 			return true;
 		}
 
@@ -428,6 +451,7 @@ namespace Files.App.Controls
 				VisualStateManager.GoToState(this, DisplayMode == SidebarDisplayMode.Compact ? "Compact" : "NonCompact", false);
 				ReapplyOwnerExpansionState();
 			}
+			UpdateItemAppearanceAfterDisplayMode();
 		}
 
 		private void ReapplyOwnerExpansionState()
@@ -480,6 +504,7 @@ namespace Files.App.Controls
 			{
 				VisualStateManager.GoToState(this, "NoExpansion", false);
 				UpdateSelectionState();
+				UpdateItemAppearance();
 				return;
 			}
 
@@ -498,6 +523,7 @@ namespace Files.App.Controls
 				VisualStateManager.GoToState(this, IsExpanded ? "ExpandedIconNormal" : "CollapsedIconNormal", false);
 			}
 			UpdateSelectionState();
+			UpdateItemAppearance();
 		}
 
 		private void ItemBorder_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -567,7 +593,7 @@ namespace Files.App.Controls
 			var openDelay = Owner?.HoverToOpenDelay ?? TimeSpan.Zero;
 			var expandDelay = Owner?.HoverToExpandDelay ?? TimeSpan.Zero;
 			var isCenter = insertsAbove == SidebarItemDropPosition.Center;
-			var canHoverOpen = openDelay > TimeSpan.Zero && isCenter && Item is not null && (!IsGroupHeader || Item.IsLeafWithChildren);
+			var canHoverOpen = !e.DataView.Contains(SidebarView.ReorderDataFormat) && openDelay > TimeSpan.Zero && isCenter && Item is not null && (!IsGroupHeader || Item.IsLeafWithChildren);
 			var canHoverExpand = expandDelay > TimeSpan.Zero && isCenter && HasChildren && CollapseEnabled;
 			if (canHoverExpand)
 			{
@@ -627,7 +653,9 @@ namespace Files.App.Controls
 		[DynamicWindowsRuntimeCast(typeof(Grid))]
 		private SidebarItemDropPosition DetermineDropTargetPosition(DragEventArgs args)
 		{
-			if (UseReorderDrop)
+			if (TryGetPreviewDropPosition(args, out var previewPosition))
+				return previewPosition;
+			if (UseReorderDrop || args.DataView.Contains(SidebarView.ReorderDataFormat))
 			{
 				if (GetTemplateChild("ElementGrid") is Grid grid)
 				{

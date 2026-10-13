@@ -20,6 +20,9 @@ namespace Files.App.Data.Contracts
 		/// </summary>
 		bool IsSidebarOpen { get; set; }
 
+		string SidebarCustomization { get; set; }
+		string CustomizationPreferences { get; set; }
+
 		#endregion
 
 		/// <summary>

@@ -43,16 +43,17 @@ namespace Files.App.ViewModels.UserControls
 			sidebarItems.CollectionChanged += FlatTree_SidebarItemsChanged;
 		}
 
-		private void CollectVisibleSubtree(ISidebarItemModel item, int depth, List<FlatSidebarItem> sink)
+		private void CollectVisibleSubtree(ISidebarItemModel item, int depth, List<FlatSidebarItem> sink, bool compactGroupChild = false)
 		{
-			if (depth > 0 && IsCompactDisplayMode)
+			if (IsVisualRowHidden(item)) return;
+			if (depth > 0 && IsCompactDisplayMode && !compactGroupChild)
 				return;
 			var rowOpacity = item is LocationItem { IsHidden: true } ? Constants.UI.DimItemOpacity : 1.0;
 			sink.Add(new FlatSidebarItem(item, depth, rowOpacity));
 			if (!item.IsExpanded)
 				return;
 			foreach (var child in EnumerateChildren(item))
-				CollectVisibleSubtree(child, depth + 1, sink);
+				CollectVisibleSubtree(child, depth + 1, sink, ShowsCompactGroupContents(item));
 		}
 
 		private static IEnumerable<ISidebarItemModel> EnumerateChildren(ISidebarItemModel item)
@@ -96,11 +97,15 @@ namespace Files.App.ViewModels.UserControls
 		private void FlatTree_VMPropertyChanged(object? sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == nameof(ActualDisplayMode))
+			{
 				RebuildFlatTree();
+				RefreshVisualIconsForDisplayMode();
+			}
 		}
 
 		private void FlatTree_SidebarItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
 		{
+			if (visualReorderDepth > 0) return;
 			if (dispatcherQueue is null)
 				return;
 			dispatcherQueue.EnqueueOrInvokeAsync(() => HandleSidebarItemsChangedAsync(e));
@@ -253,7 +258,10 @@ namespace Files.App.ViewModels.UserControls
 				return;
 
 			if (e.PropertyName == nameof(ISidebarItemModel.Children) && _flatLookup.ContainsKey(item))
+			{
 				ResubscribeChildren(item);
+				ReconcileVisualChildren(item);
+			}
 
 			if (e.PropertyName == nameof(ISidebarItemModel.IsExpanded) && dispatcherQueue is not null)
 				dispatcherQueue.EnqueueOrInvokeAsync(() => HandleItemExpansionChangedAsync(item));
@@ -261,6 +269,7 @@ namespace Files.App.ViewModels.UserControls
 
 		private async Task HandleItemExpansionChangedAsync(ISidebarItemModel item)
 		{
+			if (SidebarCustomizationEnabled && IsCompactDisplayMode) { RebuildFlatTree(); return; }
 			if (!TryGetFlatPosition(item, out var start, out var node))
 				return;
 			if (item.IsExpanded)
@@ -269,11 +278,14 @@ namespace Files.App.ViewModels.UserControls
 				RemoveSubtreeRange(start + 1, FindSubtreeEnd(start, node.Depth));
 			if (node.Depth == 0)
 				UpdateSectionPredecessorFlags();
+			else if (SidebarCustomizationEnabled)
+				UpdateLegacySectionInsets();
 			RefreshSelectionForCurrentPath();
 		}
 
 		private void FlatTree_ChildCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
 		{
+			if (visualReorderDepth > 0) return;
 			if (sender is not INotifyCollectionChanged notify)
 				return;
 			if (!_flatChildCollectionParents.TryGetValue(notify, out var parent))
@@ -288,6 +300,7 @@ namespace Files.App.ViewModels.UserControls
 
 		private async Task HandleChildCollectionChangedAsync(ISidebarItemModel parent, NotifyCollectionChangedEventArgs e)
 		{
+			if (SidebarCustomizationEnabled && IsCompactDisplayMode) { RebuildFlatTree(); return; }
 			if (!parent.IsExpanded || !TryGetFlatPosition(parent, out var parentStart, out var parentNode))
 				return;
 			int childDepth = parentNode.Depth + 1;
@@ -359,6 +372,8 @@ namespace Files.App.ViewModels.UserControls
 				node.HasExpandedPredecessor = !IsCompactDisplayMode && prevWasExpanded;
 				prevWasExpanded = node.Item.Children is null ? true : node.Item.IsExpanded;
 			}
+			if (SidebarCustomizationEnabled)
+				UpdateLegacySectionInsets();
 		}
 
 		private int FindChildInsertionIndex(int parentStart, int childDepth, int sourceIndex)

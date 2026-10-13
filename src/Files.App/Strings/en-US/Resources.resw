@@ -4740,4 +4740,101 @@
   <data name="ConfirmRemoveTagsDialogContent" xml:space="preserve">
     <value>Are you sure you want to remove tags from the selected items?</value>
   </data>
+  <data name="SidebarVisualMoveUp" xml:space="preserve"><value>Move up</value></data>
+  <data name="SidebarVisualMoveDown" xml:space="preserve"><value>Move down</value></data>
+  <data name="SidebarVisualNewGroup" xml:space="preserve"><value>Group</value></data>
+  <data name="SidebarEditorDuplicate" xml:space="preserve"><value>Duplicate item</value></data>
+  <data name="SidebarEditorDuplicateSuffix" xml:space="preserve"><value>(duplicate)</value></data>
+  <data name="SidebarEditorIconError" xml:space="preserve"><value>The selected icon could not be loaded.</value></data>
+  <data name="SidebarVisualRemove" xml:space="preserve"><value>Remove from sidebar</value></data>
+  <data name="SidebarVisualName" xml:space="preserve"><value>Label</value></data>
+  <data name="SidebarVisualTarget" xml:space="preserve"><value>Path</value></data>
+  <data name="SidebarVisualTargetPlaceholder" xml:space="preserve"><value>Linked folder path</value></data>
+  <data name="CustomizationSidebarHeading" xml:space="preserve"><value>Sidebar</value></data>
+  <data name="CustomizationSidebarSharpIcons" xml:space="preserve"><value>Use higher resolution icons for larger sizes</value></data>
+  <data name="CustomizationSidebarSharpIconsNotes" xml:space="preserve"><value>Used when available. Some icons may not change.</value></data>
+  <data name="CustomizationSidebarKeepTextPosition" xml:space="preserve"><value>Keep text in place when an icon is hidden</value></data>
+  <data name="CustomizationSidebarKeepTextPositionNotes" xml:space="preserve"><value>When off, the text moves into the hidden icon’s space.</value></data>
+  <data name="CustomizationSidebarAddSeparator" xml:space="preserve"><value>Separator</value></data>
+  <data name="CustomizationSidebarAddGap" xml:space="preserve"><value>Gap</value></data>
+  <data name="CustomizationSidebarHideIcon" xml:space="preserve"><value>Hide icon</value></data>
+  <data name="CustomizationSidebarHidePin" xml:space="preserve"><value>Hide pin icon</value></data>
+  <data name="CustomizationSidebarGapSize" xml:space="preserve"><value>Row height (px)</value></data>
+  <data name="CustomizationColumnsHeading" xml:space="preserve"><value>Column details</value></data>
+  <data name="CustomizationColumnsFit" xml:space="preserve"><value>Fit all columns to width</value></data>
+  <data name="CustomizationColumnsLive" xml:space="preserve"><value>Automatically fit columns to width</value></data>
+  <data name="CustomizationSidebarAppearance" xml:space="preserve"><value>Style</value></data>
+  <data name="SidebarEditorLegacy" xml:space="preserve"><value>Legacy</value></data>
+  <data name="CustomizationSidebarDragEnabled" xml:space="preserve"><value>Drag to rearrange sidebar items</value></data>
+  <data name="CustomizationSidebarDragEnabledNotes" xml:space="preserve"><value>While on, folders can’t be moved or copied by dragging them from the sidebar.</value></data>
+  <data name="CustomizationSidebarAlwaysExpanded" xml:space="preserve"><value>Always expanded</value></data>
+  <data name="CustomizationSidebarAlwaysCollapsed" xml:space="preserve"><value>Always collapsed</value></data>
+  <data name="CustomizationShortcutArrowsHeading" xml:space="preserve"><value>Shortcut badges</value></data>
+  <data name="CustomizationShortcutArrowsDesktop" xml:space="preserve"><value>Hide badges on Desktop only</value></data>
+  <data name="CustomizationShortcutArrowsAll" xml:space="preserve"><value>Hide badges everywhere</value></data>
+  <data name="CustomizationShortcutArrowsNotes" xml:space="preserve"><value>Hide shortcut badges on Desktop items or across the app.</value></data>
+  <data name="CustomizationSidebarScopeAll" xml:space="preserve"><value>Entire sidebar</value></data>
+  <data name="CustomizationSidebarScopeGroup" xml:space="preserve"><value>The same group</value></data>
+  <data name="CustomizationSidebarResetAppearance" xml:space="preserve"><value>Reset this item's appearance</value></data>
+  <data name="CustomizationSidebarCompactShowIcons" xml:space="preserve"><value>Show hidden icons</value></data>
+  <data name="CustomizationSidebarCompactGroupContents" xml:space="preserve"><value>Show items from expanded groups</value></data>
+  <data name="CustomizationSidebarCompactIconSize" xml:space="preserve"><value>Icon size</value></data>
+  <data name="CustomizationSidebarCompactOriginalSize" xml:space="preserve"><value>Default</value></data>
+  <data name="CustomizationSidebarCompactLargestSize" xml:space="preserve"><value>Larger</value></data>
+  <data name="CustomizationSidebarNewGroupName" xml:space="preserve"><value>New group</value></data>
+  <data name="CustomizationSidebarNewShortcutName" xml:space="preserve"><value>New folder shortcut</value></data>
+  <data name="CustomizationSidebarEntrySize" xml:space="preserve"><value>Size</value></data>
+  <data name="CustomizationShortcutArrowVisibility" xml:space="preserve"><value>Shortcut arrow visibility</value></data>
+  <data name="SidebarEditorAdd" xml:space="preserve"><value>Add</value></data>
+  <data name="SidebarEditorPreview" xml:space="preserve"><value>Sidebar layout preview</value></data>
+  <data name="SidebarEditorOptions" xml:space="preserve"><value>Options</value></data>
+  <data name="SidebarEditorDeleteIcon" xml:space="preserve"><value>Delete imported icon</value></data>
+  <data name="SidebarEditorResetTooltip" xml:space="preserve"><value>Reset sidebar appearance and settings to default</value></data>
+  <data name="SidebarEditorUndoAppearance" xml:space="preserve"><value>Undo changes</value></data>
+  <data name="SidebarEditorResetConfirm" xml:space="preserve"><value>Restore the default sidebar layout and appearance?</value></data>
+  <data name="SidebarEditorSeparator" xml:space="preserve"><value>Separator</value></data>
+  <data name="SidebarEditorGap" xml:space="preserve"><value>Space gap</value></data>
+  <data name="SidebarEditorVisible" xml:space="preserve"><value>Show in sidebar</value></data>
+  <data name="SidebarEditorDefault" xml:space="preserve"><value>Default</value></data>
+  <data name="SidebarEditorMedium" xml:space="preserve"><value>Medium</value></data>
+  <data name="SidebarEditorLarge" xml:space="preserve"><value>Large</value></data>
+  <data name="SidebarEditorExpansion" xml:space="preserve"><value>Expansion arrow</value></data>
+  <data name="SidebarEditorApplyAppearance" xml:space="preserve"><value>Unify Appearance</value></data>
+  <data name="SidebarEditorUnifiedDescription" xml:space="preserve"><value>Copy this item’s appearance to others</value></data>
+  <data name="SidebarEditorFolderAppearance" xml:space="preserve"><value>Style inner folders separately</value></data>
+  <data name="SidebarEditorFolderAppearanceDescription" xml:space="preserve"><value>When off, folders inside this item match its appearance</value></data>
+  <data name="SidebarEditorFolderHideIcons" xml:space="preserve"><value>Hide icons</value></data>
+  <data name="SidebarEditorResizePreview" xml:space="preserve"><value>Resize the sidebar preview</value></data>
+  <data name="SidebarEditorCompactCustomSize" xml:space="preserve"><value>Custom icon size in pixels (8–32)</value></data>
+  <data name="SidebarEditorPixels" xml:space="preserve"><value>px</value></data>
+  <data name="SidebarEditorApplyTo" xml:space="preserve"><value>Apply this item's appearance to:</value></data>
+  <data name="SidebarEditorUnavailable" xml:space="preserve"><value>Currently unavailable</value></data>
+  <data name="CustomizationSidebarEditorDescription" xml:space="preserve"><value>Customize sidebar appearance and layout.</value></data>
+  <data name="CustomizationResetDefaults" xml:space="preserve"><value>Reset to default</value></data>
+  <data name="CustomizationReset" xml:space="preserve"><value>Reset</value></data>
+  <data name="CustomizationColumnsReorder" xml:space="preserve"><value>Reorder columns</value></data>
+  <data name="CustomizationColumnsMenuNotes" xml:space="preserve"><value>The default layout of the details view. To change only the current view, right-click a column heading.</value></data>
+  <data name="CustomizationColumnsOrderNotes" xml:space="preserve"><value>Drag to reorder. Columns that only appear in some folders keep their place.</value></data>
+  <data name="CustomizationColumnsDragToReorder" xml:space="preserve"><value>Drag to reorder</value></data>
+  <data name="CustomizationColumnsOnlyGit" xml:space="preserve"><value>Git repositories</value></data>
+  <data name="CustomizationColumnsOnlySearch" xml:space="preserve"><value>Search results</value></data>
+  <data name="CustomizationColumnsOnlyRecycleBin" xml:space="preserve"><value>Recycle Bin</value></data>
+  <data name="CustomizationColumnsOnlyCloud" xml:space="preserve"><value>Cloud folders</value></data>
+  <data name="CustomizationColumnsResetConfirm" xml:space="preserve"><value>Restore the default columns, order and view?</value></data>
+  <data name="SidebarEditorTextPoints" xml:space="preserve"><value>Text (pt)</value></data>
+  <data name="SidebarEditorIconPoints" xml:space="preserve"><value>Icon (pt)</value></data>
+  <data name="SidebarEditorLinkSizes" xml:space="preserve"><value>Link text and icon sizes. Turn off to adjust each size independently.</value></data>
+  <data name="SidebarEditorCustom" xml:space="preserve"><value>Custom</value></data>
+  <data name="SidebarEditorCompactMode" xml:space="preserve"><value>Compact mode</value></data>
+  <data name="SidebarEditorCompactHideGroupIcons" xml:space="preserve"><value>Hide group icons</value></data>
+  <data name="SidebarEditorApply" xml:space="preserve"><value>Apply</value></data>
+  <data name="CustomizationColumnsAppDefault" xml:space="preserve"><value>App's default</value></data>
+  <data name="CustomizationColumnsSizing" xml:space="preserve"><value>Column sizing</value></data>
+  <data name="CustomizationColumnsFitContent" xml:space="preserve"><value>Fit all columns to content</value></data>
+  <data name="CustomizationColumnsRestoreDefault" xml:space="preserve"><value>Restore to default</value></data>
+  <data name="CustomizationColumnsRestoreOrder" xml:space="preserve"><value>Restore column order</value></data>
+  <data name="CustomizationColumnsAppSettings" xml:space="preserve"><value>Options</value></data>
+  <data name="CustomizationColumnsAppSettingsNote" xml:space="preserve"><value>App setting, also in Settings &gt; Layout.</value></data>
+  <data name="CustomizationShortcutArrowsDesktopFolders" xml:space="preserve"><value>Hide badges in folders inside the Desktop</value></data>
+  <data name="CustomizationShortcutArrowsSuggestions" xml:space="preserve"><value>Hide badges in Search suggestions</value></data>
 </root>

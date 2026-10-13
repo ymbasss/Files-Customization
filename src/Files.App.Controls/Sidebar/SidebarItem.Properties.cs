@@ -20,7 +20,10 @@ namespace Files.App.Controls
 		private static void OnOwnerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
 		{
 			if (d is SidebarItem item && item.Owner is { } owner)
+			{
 				VisualStateManager.GoToState(item, owner.SupportsExpansion ? "OwnerSupportsExpansion" : "OwnerDoesNotSupportExpansion", false);
+				if (item.IsSidebarCustomized) item.UpdateExpansionState();
+			}
 		}
 
 		public bool IsSelected
@@ -58,7 +61,10 @@ namespace Files.App.Controls
 		private static void OnNestingLevelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
 		{
 			if (d is SidebarItem item && e.NewValue is int level)
+			{
 				item.IndentWidth = level * 16d;
+				if (item.IsSidebarCustomized) item.UpdateItemIndent();
+			}
 		}
 
 		// Dims icon + text + chevron + decorator only; the selection indicator and pointer-over fill stay at full opacity so a selected hidden row still reads as selected.
@@ -147,8 +153,12 @@ namespace Files.App.Controls
 			}
 			else if (e.Property == IsExpandedProperty)
 			{
+				if (item.KeepsPreviewExpansion())
+					return;
 				if (item.UseItemPresentation && item.Item is { } model && model.IsExpanded != item.IsExpanded)
 					model.IsExpanded = item.IsExpanded;
+				if (item.FollowsLockedExpansion())
+					return;
 				item.UpdateExpansionState();
 			}
 			else if (e.Property == ItemProperty)

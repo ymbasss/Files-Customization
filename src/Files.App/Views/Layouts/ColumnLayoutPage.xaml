@@ -270,7 +270,7 @@
 										Stretch="Uniform" />
 
 									<Viewbox
-										x:Name="ShortcutGlyphElement"
+										x:Name="ShortcutGlyphElement" helpers:CustomShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
 										Width="10"
 										Height="10"
 										HorizontalAlignment="Left"

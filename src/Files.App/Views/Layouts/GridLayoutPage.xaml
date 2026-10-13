@@ -131,7 +131,7 @@
 							Stretch="Uniform" />
 
 						<Viewbox
-							x:Name="ShortcutGlyphElement"
+							x:Name="ShortcutGlyphElement" helpers:CustomShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
 							Width="16"
 							Height="16"
 							Margin="14"
@@ -316,7 +316,7 @@
 								Source="{x:Bind IconOverlay, Mode=OneWay}"
 								Stretch="Uniform" />
 							<Viewbox
-								x:Name="ShortcutGlyphElement"
+								x:Name="ShortcutGlyphElement" helpers:CustomShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
 								Width="10"
 								Height="10"
 								HorizontalAlignment="Left"
@@ -459,7 +459,7 @@
 								Stretch="Uniform" />
 
 							<Viewbox
-								x:Name="ShortcutGlyphElement"
+								x:Name="ShortcutGlyphElement" helpers:CustomShortcutArrow.ItemPath="{x:Bind ItemPath, Mode=OneWay}"
 								Width="16"
 								Height="16"
 								Margin="8"

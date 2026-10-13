@@ -3,6 +3,7 @@
 
 using Files.App.Controls;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using WinRT;
 
 namespace Files.App.ViewModels.Settings
@@ -19,7 +20,10 @@ namespace Files.App.ViewModels.Settings
 		private List<SettingsSearchResult>? _searchIndex;
 
 		[ObservableProperty]
+		[NotifyPropertyChangedFor(nameof(SettingsScrollBarVisibility))]
 		public partial SettingsPageKind SelectedPage { get; set; } = SettingsPageKind.GeneralPage;
+		public ScrollBarVisibility SettingsScrollBarVisibility => SelectedPage == SettingsPageKind.CustomizationPage ? ScrollBarVisibility.Visible : ScrollBarVisibility.Auto;
+		public SettingsNavigationItem CustomizationNavigationItem { get; }
 
 		[ObservableProperty]
 		[NotifyPropertyChangedFor(nameof(IsSearchActive))]
@@ -46,9 +50,11 @@ namespace Files.App.ViewModels.Settings
 			NavigationItems.Add(CreateNavigationItem(SettingsPageKind.DevToolsPage, "SettingsItemDevTools", Strings.DevTools.GetLocalizedResource(), "App.ThemedIcons.Settings.DevTools"));
 			NavigationItems.Add(CreateNavigationItem(SettingsPageKind.AdvancedPage, "SettingsItemAdvanced", Strings.Advanced.GetLocalizedResource(), "App.ThemedIcons.Settings.Advanced"));
 			NavigationItems.Add(CreateNavigationItem(SettingsPageKind.AboutPage, "SettingsItemAbout", Strings.About.GetLocalizedResource(), "App.ThemedIcons.Info"));
+			CustomizationNavigationItem = CreateNavigationItem(SettingsPageKind.CustomizationPage, "SettingsItemCustomization", Strings.Customization.GetLocalizedResource(), "App.ThemedIcons.Settings.General.Edit");
+			NavigationItems.Add(CustomizationNavigationItem);
 
 			foreach (var navItem in NavigationItems)
-				FlatNavigationItems.Add(new FlatSidebarItem(navItem, 0));
+				if (navItem != CustomizationNavigationItem) FlatNavigationItems.Add(new FlatSidebarItem(navItem, 0));
 
 			SetSelectedPage(SettingsPageKind.GeneralPage);
 		}

@@ -193,6 +193,7 @@ namespace Files.App.Views.Layouts
 				ColumnsViewModel.GitLastCommitShaColumn.Update(FolderSettings.ColumnsViewModel.GitLastCommitShaColumn);
 			}
 
+			CustomColumnsNavigatedTo(eventArgs.Parameter as NavigationArguments);
 			shellViewModel.EnabledGitProperties = GetEnabledGitProperties(ColumnsViewModel);
 
 			folderSettings.LayoutModeChangeRequested += FolderSettings_LayoutModeChangeRequested;
@@ -201,6 +202,7 @@ namespace Files.App.Views.Layouts
 			shellViewModel.PageTypeUpdated += FilesystemViewModel_PageTypeUpdated;
 			shellViewModel.ItemLoadStatusChanged += ShellViewModel_ItemLoadStatusChanged;
 			UserSettingsService.LayoutSettingsService.PropertyChanged += LayoutSettingsService_PropertyChanged;
+			UserSettingsService.AppearanceSettingsService.PropertyChanged += CustomizationSettingsChanged;
 			FileList.Items.VectorChanged += FileListItems_VectorChanged;
 
 			var parameters = (NavigationArguments)eventArgs.Parameter;
@@ -222,6 +224,7 @@ namespace Files.App.Views.Layouts
 
 		protected override void OnNavigatingFrom(NavigatingCancelEventArgs e)
 		{
+			CustomColumnsNavigatingFrom();
 			base.OnNavigatingFrom(e);
 			var folderSettings = FolderSettings
 				?? throw new InvalidOperationException("The details layout does not have folder settings.");
@@ -232,12 +235,14 @@ namespace Files.App.Views.Layouts
 			shellViewModel.PageTypeUpdated -= FilesystemViewModel_PageTypeUpdated;
 			shellViewModel.ItemLoadStatusChanged -= ShellViewModel_ItemLoadStatusChanged;
 			UserSettingsService.LayoutSettingsService.PropertyChanged -= LayoutSettingsService_PropertyChanged;
+			UserSettingsService.AppearanceSettingsService.PropertyChanged -= CustomizationSettingsChanged;
 			FileList.Items.VectorChanged -= FileListItems_VectorChanged;
 			_autoFitColumnsTimer?.Stop();
 		}
 
 		public override void Dispose()
 		{
+			CustomColumnsUnloaded();
 			Bindings.StopTracking();
 			if (FolderSettings is { } folderSettings)
 			{
@@ -340,11 +345,13 @@ namespace Files.App.Views.Layouts
 		private void FolderSettings_SortOptionPreferenceUpdated(object? sender, SortOption e)
 		{
 			UpdateSortIndicator();
+			QueueCustomColumnFit(true);
 		}
 
 		private void FolderSettings_SortDirectionPreferenceUpdated(object? sender, SortDirection e)
 		{
 			UpdateSortIndicator();
+			QueueCustomColumnFit(true);
 		}
 
 		private void UpdateSortIndicator()
@@ -405,6 +412,7 @@ namespace Files.App.Views.Layouts
 				ColumnsViewModel.PathColumn.Hide();
 
 			UpdateSortIndicator();
+			QueueCustomColumnFit(true);
 		}
 
 		private void FolderSettings_LayoutModeChangeRequested(object? sender, LayoutModeEventArgs e)
@@ -773,6 +781,7 @@ namespace Files.App.Views.Layouts
 		[DynamicWindowsRuntimeCast(typeof(ListViewItem))]
 		private void StackPanel_Loaded(object sender, RoutedEventArgs e)
 		{
+			RememberColumnRow((StackPanel)sender);
 			// This is the best way I could find to set the context flyout, as doing it in the styles isn't possible
 			// because you can't use bindings in the setters
 			DependencyObject item = VisualTreeHelper.GetParent(sender as StackPanel);
@@ -797,10 +806,12 @@ namespace Files.App.Views.Layouts
 		{
 			if (e.Key == VirtualKey.Left || e.Key == VirtualKey.Right)
 			{
+				MarkCustomColumnWidthsChanged();
 				UpdateColumnLayout();
 				var folderSettings = FolderSettings
 					?? throw new InvalidOperationException("The details layout does not have folder settings.");
 				folderSettings.ColumnsViewModel = ColumnsViewModel;
+				RefreshColumnMenuState();
 			}
 		}
 
@@ -830,15 +841,19 @@ namespace Files.App.Views.Layouts
 		private void RootGrid_SizeChanged(object? sender, SizeChangedEventArgs? e)
 		{
 			MaxWidthForRenameTextbox = Math.Max(0, RootGrid.ActualWidth - 80);
+			QueueCustomColumnFit();
+			RefreshColumnMenuState();
 		}
 
 		private void GridSplitter_ManipulationStarted(object sender, ManipulationStartedRoutedEventArgs e)
 		{
+			manualColumnResize = ColumnsActive;
 			this.ChangeCursor(InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast));
 		}
 
 		private void GridSplitter_ManipulationCompleted(object sender, ManipulationCompletedRoutedEventArgs e)
 		{
+			MarkCustomColumnWidthsChanged();
 			var folderSettings = FolderSettings
 				?? throw new InvalidOperationException("The details layout does not have folder settings.");
 			folderSettings.ColumnsViewModel = ColumnsViewModel;
@@ -858,11 +873,13 @@ namespace Files.App.Views.Layouts
 			folderSettings.ColumnsViewModel = ColumnsViewModel;
 			var shellViewModel = ParentShellPageInstance.GetRequiredShellViewModel();
 			shellViewModel.EnabledGitProperties = GetEnabledGitProperties(ColumnsViewModel);
+			CustomColumnsShownChanged();
 		}
 
 		private void GridSplitter_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
 		{
-			var columnToResize = Grid.GetColumn(sender as Files.App.Controls.GridSplitter) / 2 + 1;
+			if (FileList.Items.Any()) MarkCustomColumnWidthsChanged();
+			var columnToResize = ColumnSplitterIndex((Files.App.Controls.GridSplitter)sender) / 2 + 1;
 			ResizeColumnToFit(columnToResize);
 
 			e.Handled = true;
@@ -877,6 +894,7 @@ namespace Files.App.Views.Layouts
 		{
 			if (!FileList.Items.Any())
 				return;
+			MarkCustomColumnWidthsChanged();
 
 			// Scale to whatever DetailsLayoutColumnItem properties exist on ColumnsViewModel so new columns don't need a code change here.
 			int totalColumnCount = typeof(ColumnsViewModel).GetProperties().Count(prop => prop.PropertyType == typeof(DetailsLayoutColumnItem));
@@ -886,6 +904,8 @@ namespace Files.App.Views.Layouts
 
 		private void AutoFitColumnsIfEnabled()
 		{
+			if (QueueCustomAutoFit())
+				return;
 			if (!UserSettingsService.LayoutSettingsService.AutoSizeColumnsInDetailsLayout)
 				return;
 
@@ -977,6 +997,7 @@ namespace Files.App.Views.Layouts
 			var folderSettings = FolderSettings
 				?? throw new InvalidOperationException("The details layout does not have folder settings.");
 			folderSettings.ColumnsViewModel = ColumnsViewModel;
+			RefreshColumnMenuState();
 		}
 
 		private double MeasureColumnEstimate(int columnIndex, int measureItemsCount, int maxItemLength)
@@ -1072,6 +1093,7 @@ namespace Files.App.Views.Layouts
 		private void FileList_Loaded(object sender, RoutedEventArgs e)
 		{
 			ContentScroller = FileList.FindDescendant<ScrollViewer>(x => x.Name == "ScrollViewer");
+			AttachCustomColumnFitScroller();
 			const double OffsetCorrection = 88; // HeaderGrid (40) + ListViewHeaderItem (44 + 4 margin)
 
 			RootGridZoom.ViewChangeStarted += (_, args) =>
@@ -1090,6 +1112,7 @@ namespace Files.App.Views.Layouts
 		private void SetDetailsColumnsAsDefault_Click(object sender, RoutedEventArgs e)
 		{
 			LayoutPreferencesManager.SetDefaultLayoutPreferences(ColumnsViewModel);
+			RefreshColumnMenuState();
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(CheckBox))]

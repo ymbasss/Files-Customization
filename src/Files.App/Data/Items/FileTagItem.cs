@@ -13,7 +13,16 @@ namespace Files.App.Data.Items
 {
 	public sealed partial class FileTagItem : ObservableObject, INavigationControlItem
 	{
-		public string? Text { get; set; }
+		private string? text;
+		public string? Text
+		{
+			get => SidebarDisplayName ?? text;
+			set
+			{
+				if (SidebarCustomized) SetProperty(ref text, value);
+				else text = value;
+			}
+		}
 
 		private string? path;
 		public string? Path

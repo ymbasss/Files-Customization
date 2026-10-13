@@ -300,7 +300,7 @@
 
 			<!--  Footer  -->
 			<controls:SidebarView.Footer>
-				<StackPanel Padding="4,2,4,2" Spacing="2">
+				<StackPanel Padding="4,2,4,2" Spacing="2" Visibility="{x:Bind SidebarAdaptiveViewModel.SettingsFooterVisibility, Mode=OneWay}">
 					<Border
 						Height="1"
 						HorizontalAlignment="Stretch"

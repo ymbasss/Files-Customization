@@ -1,51 +1,42 @@
-<p align="center">
-  <img alt="Files hero image" src="./assets/ReadmeHero.png" />
-</p>
+# Files – Customization
 
-<p align="center">
-  <a style="text-decoration:none" href="https://files.community/">
-    <img src="https://img.shields.io/badge/Files-Website-F9B81F" alt="Files Website" /></a>
-  <a style="text-decoration:none" href="https://github.com/files-community/Files/actions/workflows/ci.yml">
-    <img src="https://github.com/files-community/Files/actions/workflows/ci.yml/badge.svg" alt="Files CI Status" /></a>
-  <a style="text-decoration:none" href="https://crowdin.com/project/files-app">
-    <img src="https://badges.crowdin.net/files-app/localized.svg" alt="Files Localization Status" /></a>
-  <a style="text-decoration:none" href="https://discord.gg/files">
-    <img src="https://img.shields.io/discord/725513575971684472?label=Discord&color=7289da" alt="Files Discord" /></a>
-</p>
+An **unofficial fork of [Files](https://github.com/files-community/Files) 4.3** that adds **Settings > Customization**:
+three optional features for shaping the sidebar, the details view and shortcut icons.
 
-Files is a modern file manager that helps users organize their files and folders. Our mission with Files is to build the best file manager for Windows, and we’re proud to be building it out in the open so everyone can participate. User feedback helps shape the features we work on, & the bug reports on GitHub help to make Files more reliable. Built and maintained by the open-source community, Files features robust multitasking experiences, file tags, deep integrations, and an intuitive design.
+Each feature has its own switch. When a feature is off, the app runs Files 4.3's original code.
 
-## Installing and running Files
+## Features
 
-Files is a community-driven project that depends on your support to grow and improve. Please consider purchasing Files through the Microsoft Store or supporting us on GitHub if you use the classic installer.
+- **Sidebar**: a live editor for the whole sidebar.
+  - Rearrange items by dragging, and create your own groups, separators, gaps and folder shortcuts.
+  - Relabel, hide or restyle any item: icon, size, expansion arrow, inner folders.
+  - Copy one item's look to others with Unify Appearance.
+  - Choose between Files 4.3's look and a **Legacy** style based on the classic Files sidebar.
+  - Undo, Redo and Reset at any time.
+- **Column details**: set the default columns, their order and how they're sized (fit to content, or fit to the window width).
+  The column heading menu gains Fit all columns to width, Reorder columns and Restore to default.
+- **Shortcut badges**: hide the arrow badge on shortcut icons on the Desktop or everywhere.
 
-You can also use the preview version alongside the stable release to get early access to new features and improvements.
+See **[FEATURES.md](https://github.com/ymbasss/Files/blob/customization/FEATURES.md)** for every option.
 
-<p align="left">
-  <!-- Store Badge -->
-  <a style="text-decoration:none" href="https://apps.microsoft.com/detail/9NGHP3DX8HDX?launch=true&mode=full">
-    <picture>
-      <source media="(prefers-color-scheme: light)" srcset="./assets/StoreBadge-dark.png" height="80" />
-      <img src="./assets/StoreBadge-light.png" height="80" /></picture></a>
-  &ensp;
-  <!-- Classic Installer Badge -->
-  <a style="text-decoration:none" href="https://files.community/download">
-    <picture>
-      <source media="(prefers-color-scheme: light)" srcset="./assets/ClassicInstallerBadge-dark.png" height="80" />
-      <img src="./assets/ClassicInstallerBadge-light.png" height="80" /></picture></a>
-</p>
+## Changes from Files 4.3
 
-## Building from source
+This branch is Files 4.3 (tag `v4.3`) plus one set of changes. Almost all the new code is in `Customization` folders, and
+Files' own files only gain small hooks.
 
-Instructions for building the source code can be found on our [documentation site](https://files.community/docs/contributing/building-from-source).
+- **[Compare with Files 4.3](https://github.com/ymbasss/Files/compare/v4.3...customization)**: every changed and added file.
+- **[CHANGES.md](https://github.com/ymbasss/Files/blob/customization/CHANGES.md)**: what each file does and what changed in Files' files.
 
+## Building
 
-## Contributing to Files
+Build it the same way as Files: see the official
+[building from source](https://files.community/docs/contributing/building-from-source) guide.
+It installs as **Files - Dev**, alongside a Store or installer copy of Files.
 
-Want to contribute to this project? Let us know with an [issue](https://github.com/files-community/Files/issues) that communicates your intent to create a [pull request](https://github.com/files-community/Files/pulls). Also, view our [contributing guidelines](https://github.com/files-community/Files/blob/main/.github/CONTRIBUTING.md) to make sure you're up to date on the coding conventions.
+## Credits and license
 
-Looking for a place to start? Check out the [task board](https://github.com/orgs/files-community/projects/3/views/2), where you can sort tasks by size and priority.
+Files is made by the [Files Community](https://github.com/files-community). This fork isn't affiliated with or endorsed
+by them. Please report issues with this fork here, not to the Files project.
 
-## Screenshots
-
-![Files](./assets/FilesScreenshot.png)
+Licensed like Files itself under the [MIT](https://github.com/ymbasss/Files/blob/customization/LICENSE-MIT) and
+[MPL-2.0](https://github.com/ymbasss/Files/blob/customization/LICENSE-MPL) licenses.

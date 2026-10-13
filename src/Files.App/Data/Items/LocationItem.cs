@@ -76,13 +76,25 @@ namespace Files.App.Data.Items
 				return ChildItems;
 			}
 		}
-		public BulkConcurrentObservableCollection<INavigationControlItem>? ChildItems { get; set; }
+		private BulkConcurrentObservableCollection<INavigationControlItem>? childItems;
+		public BulkConcurrentObservableCollection<INavigationControlItem>? ChildItems
+		{
+			get => childItems;
+			set
+			{
+				// Sidebar customization follows a new children collection; otherwise this is the original plain property.
+				if (!SidebarCustomized)
+					childItems = value;
+				else if (SetProperty(ref childItems, value))
+					OnPropertyChanged(nameof(Children));
+			}
+		}
 
 		protected override string ExpansionPath
 			=> path ?? throw new InvalidOperationException("The location path has not been initialized.");
 		protected override BulkConcurrentObservableCollection<INavigationControlItem> EnsureChildItems() => ChildItems ??= [];
 
-		public IconElement? IconElement
+		public virtual IconElement? IconElement
 		{
 			get
 			{
@@ -99,6 +111,7 @@ namespace Files.App.Data.Items
 		}
 
 		FrameworkElement? ISidebarItemPresentationModel.IconElement => IconElement;
+		string? ISidebarItemPresentationModel.Text => SidebarDisplayName ?? Text;
 
 		public bool SelectsOnInvoked { get; set; } = true;
 
@@ -262,7 +275,7 @@ namespace Files.App.Data.Items
 			}
 		}
 
-		public FrameworkElement? ItemDecorator => null;
+		public FrameworkElement? ItemDecorator => SidebarPinDecorator();
 
 		public int CompareTo(INavigationControlItem? other)
 		{

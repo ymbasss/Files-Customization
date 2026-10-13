@@ -213,6 +213,7 @@ namespace Files.App.Data.Items
 		}
 
 		FrameworkElement? ISidebarItemPresentationModel.IconElement => IconElement;
+		string? ISidebarItemPresentationModel.Text => SidebarDisplayName ?? Text;
 
 		public FrameworkElement? ItemDecorator
 		{

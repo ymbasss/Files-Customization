@@ -139,6 +139,7 @@ namespace Files.App.Views
 				SettingsPageKind.DevToolsPage => typeof(DevToolsPage),
 				SettingsPageKind.AdvancedPage => typeof(AdvancedPage),
 				SettingsPageKind.AboutPage => typeof(AboutPage),
+				SettingsPageKind.CustomizationPage => typeof(CustomizationSettingsPage),
 				_ => typeof(GeneralPage),
 			};
 
