@@ -17,15 +17,15 @@ Each feature has its own switch. When a feature is off, the app runs Files 4.3's
   The column heading menu gains Fit all columns to width, Reorder columns and Restore to default.
 - **Shortcut badges**: hide the arrow badge on shortcut icons on the Desktop or everywhere.
 
-See **[FEATURES.md](https://github.com/ymbasss/Files/blob/customization/FEATURES.md)** for every option.
+See **[FEATURES.md](https://github.com/ymbasss/Files-Customization/blob/customization/FEATURES.md)** for every option.
 
 ## Changes from Files 4.3
 
 This branch is Files 4.3 (tag `v4.3`) plus one set of changes. Almost all the new code is in `Customization` folders, and
 Files' own files only gain small hooks.
 
-- **[Compare with Files 4.3](https://github.com/ymbasss/Files/compare/v4.3...customization)**: every changed and added file.
-- **[CHANGES.md](https://github.com/ymbasss/Files/blob/customization/CHANGES.md)**: what each file does and what changed in Files' files.
+- **[Compare with Files 4.3](https://github.com/ymbasss/Files-Customization/compare/v4.3...customization)**: every changed and added file.
+- **[CHANGES.md](https://github.com/ymbasss/Files-Customization/blob/customization/CHANGES.md)**: what each file does and what changed in Files' files.
 
 ## Building
 
@@ -44,5 +44,5 @@ It installs as **Files - Dev**, alongside a Store or installer copy of Files.
 Files is made by the [Files Community](https://github.com/files-community). This fork isn't affiliated with or endorsed
 by them. Please report issues with this fork here, not to the Files project.
 
-Licensed like Files itself under the [MIT](https://github.com/ymbasss/Files/blob/customization/LICENSE-MIT) and
-[MPL-2.0](https://github.com/ymbasss/Files/blob/customization/LICENSE-MPL) licenses.
+Licensed like Files itself under the [MIT](https://github.com/ymbasss/Files-Customization/blob/customization/LICENSE-MIT) and
+[MPL-2.0](https://github.com/ymbasss/Files-Customization/blob/customization/LICENSE-MPL) licenses.
