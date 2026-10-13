@@ -29,7 +29,7 @@ namespace Files.App.Views.Layouts
 		private MenuFlyout? columnMenu;
 		private bool columnMenuCustomized;
 		private string? originalFitContentText;
-		private PersistentColumnMenuItem? ColumnFitWidthItem;
+		private MenuFlyoutItem? ColumnFitWidthItem;
 		private PersistentColumnMenuItem? ColumnRestoreDefaultItem;
 		private MenuFlyoutSeparator? ColumnReorderSeparator;
 		private MenuFlyoutSubItem? ColumnReorderMenu;
@@ -59,7 +59,8 @@ namespace Files.App.Views.Layouts
 		{
 			if (ColumnFitWidthItem is null)
 			{
-				// One click fits this view's columns; how folders size them automatically is set in Settings.
+				// One click fits this view's columns; how folders size them automatically is set in Settings. Like "Fit all columns to
+				// content", it closes the menu; the other commands keep it open.
 				ColumnFitWidthItem = new() { Text = Strings.CustomizationColumnsFit.GetLocalizedResource() };
 				ColumnFitWidthItem.Click += (_, _) => FitColumnsToWidthOnce();
 				// The default layout is edited in Settings; here the view can only go back to it.
@@ -202,9 +203,11 @@ namespace Files.App.Views.Layouts
 		private void RefreshColumnMenuState(bool opening = false)
 		{
 			if (!columnMenuCustomized || !opening && columnCustomizationMenu?.IsOpen != true) return;
-			// Greyed out while the columns already fit that way, or the view already shows the default layout.
-			AllColumnsToFitMenuflyoutItem.IsEnabled = !ColumnsMatchContentFit();
-			ColumnFitWidthItem!.IsEnabled = !ColumnsMatchWidthFit();
+			// Greyed out while the columns already fit that way, or the view already shows the default layout. An empty folder has
+			// nothing to fit (4.3's own fit to content does nothing there).
+			var hasItems = FileList.Items.Any();
+			AllColumnsToFitMenuflyoutItem.IsEnabled = hasItems && !ColumnsMatchContentFit();
+			ColumnFitWidthItem!.IsEnabled = hasItems && !ColumnsMatchWidthFit();
 			// With the app's default sizing it restores only the column order (see RestoreColumnDefaults_Click).
 			ColumnRestoreDefaultItem!.Text = (UsesAppSizing ? Strings.CustomizationColumnsRestoreOrder : Strings.CustomizationColumnsRestoreDefault).GetLocalizedResource();
 			ColumnRestoreDefaultItem.IsEnabled = UsesAppSizing ? !ColumnOrderMatchesSaved() : !ColumnsMatchSavedDefaults();
