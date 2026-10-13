@@ -28,7 +28,7 @@ jobs:
       APPX_BUNDLE_PLATFORMS: 'x64|arm64'
       WORKING_DIR:           '${{ github.workspace }}'
       APPX_PACKAGE_DIR:      '${{ github.workspace }}\artifacts\AppxPackages\'
-      RELEASE_DIR:           '${{ github.workspace }}\artifacts\Release\'
+      RELEASE_DIR:           '${{ github.workspace }}\artifacts\ReleaseFiles\'
       APP_PROJECT_PATH:      'src\Files.App\Files.App.csproj'
       PACKAGE_MANIFEST_PATH: 'src\Files.App\Package.appxmanifest'
       LAUNCHER_PROJECT_PATH: 'src\Files.App.Launcher\Files.App.Launcher.vcxproj'
@@ -157,7 +157,7 @@ jobs:
         '@
         $notesPath = Join-Path $env:RUNNER_TEMP 'notes.md'
         Set-Content -Path $notesPath -Value $notes -Encoding utf8
-        $files = (Get-ChildItem $env:RELEASE_DIR).FullName
+        $files = (Get-ChildItem $env:RELEASE_DIR -File).FullName
         gh release create $env:RELEASE_TAG @files --draft --target $env:GITHUB_SHA --title "Files Customization $env:RELEASE_TAG" --notes-file $notesPath
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       env:
