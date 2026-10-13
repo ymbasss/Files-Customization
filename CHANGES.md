@@ -5,7 +5,7 @@ Settings > Customization turns each feature on or off. A feature that is off run
 
 Compared with the original Files 4.3 source, this copy has:
 - **35 added files**: the features' own code, almost all of it in `Customization` folders.
-- **25 changed 4.3 files**: mostly one-line hooks that call into the added files, plus this fork's README.
+- **27 changed 4.3 files**: mostly one-line hooks that call into the added files, plus this fork's README and AI agent notes.
 - **No deleted 4.3 files.**
 
 The copy has no build output (`bin`, `obj`, `.vs`, `artifacts`, `packages`, the dialog and launcher projects' `x64`/`Debug`/`Release`
@@ -81,6 +81,7 @@ Paths are relative to `src\`. User documentation for every feature is in `FEATUR
 | File | Change |
 |---|---|
 | `..\.github\README.md` (repository root) | Replaced with this fork's README. |
+| `..\AGENTS.md`, `..\CLAUDE.md` (repository root) | Adds a "Customization fork" section with rules for AI coding agents. |
 | `Files.App\Data\Contracts\IAppearanceSettingsService.cs` | Adds `SidebarCustomization` and `CustomizationPreferences` settings. |
 | `Files.App\Data\Enums\SettingsPageKind.cs` | Adds `CustomizationPage`. |
 | `Files.App\Data\Items\DriveItem.cs` | Sidebar shows the custom label. |
