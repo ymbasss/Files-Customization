@@ -344,11 +344,7 @@ namespace Files.App.ViewModels.UserControls
 			owner.EditorIconsChanged += OwnerIconsChanged;
 			owner.EditorPanelShown();
 			preview.MenuItemsSource = previewNodes;
-			DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-			{
-				if (!hidden) Refresh(true, true);
-				System.Diagnostics.Debug.WriteLine($"[SidebarPanel] panel#{GetHashCode()} connected, hidden {hidden}, preview rows {previewNodes.Count}"); // TEMP diagnostics
-			});
+			DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (!hidden) Refresh(true, true); });
 		}
 		// Hidden with its page (another tab or Settings page shown): keeps a half-typed edit, then stops following the sidebar
 		// and empties the preview. WinUI can report Unloaded after the page is already shown again; that is ignored.
@@ -357,7 +353,6 @@ namespace Files.App.ViewModels.UserControls
 			if (hidden || IsLoaded) return;
 			CommitPendingEdits();
 			hidden = true;
-			System.Diagnostics.Debug.WriteLine($"[SidebarPanel] panel#{GetHashCode()} disconnected"); // TEMP diagnostics
 			pendingTextCommits.Clear();
 			owner.PropertyChanged -= OwnerChanged;
 			owner.EditorIconsChanged -= OwnerIconsChanged;
