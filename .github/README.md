@@ -33,6 +33,12 @@ Build it the same way as Files: see the official
 [building from source](https://files.community/docs/contributing/building-from-source) guide.
 It installs as **Files - Dev**, alongside a Store or installer copy of Files.
 
+## Contributors
+
+- **[ymbasss](https://github.com/ymbasss)**: author of this fork, design and testing.
+- **Claude** (Anthropic): AI coding assistant.
+- **ChatGPT** (OpenAI): AI coding assistant.
+
 ## Credits and license
 
 Files is made by the [Files Community](https://github.com/files-community). This fork isn't affiliated with or endorsed
