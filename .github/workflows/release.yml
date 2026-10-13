@@ -1,0 +1,169 @@
+# Builds, signs and drafts a Files Customization release (sideload package).
+#
+# Run it from Actions > Release > Run workflow. It needs two repository secrets:
+#  SIGNING_PFX_BASE64    the signing certificate (.pfx) encoded as base64
+#  SIGNING_PFX_PASSWORD  the certificate's password
+#
+# The package's publisher is set to the certificate's subject on the build machine only; the manifest in the
+# repository stays unchanged. The release is created as a draft, to be checked and published on GitHub.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag, for example v4.3-customization.1'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2025-vs2026
+    env:
+      SOLUTION_NAME:         'Files.slnx'
+      CONFIGURATION:         'Release'
+      APPX_BUNDLE_PLATFORMS: 'x64|arm64'
+      WORKING_DIR:           '${{ github.workspace }}'
+      APPX_PACKAGE_DIR:      '${{ github.workspace }}\artifacts\AppxPackages\'
+      RELEASE_DIR:           '${{ github.workspace }}\artifacts\Release\'
+      APP_PROJECT_PATH:      'src\Files.App\Files.App.csproj'
+      PACKAGE_MANIFEST_PATH: 'src\Files.App\Package.appxmanifest'
+      LAUNCHER_PROJECT_PATH: 'src\Files.App.Launcher\Files.App.Launcher.vcxproj'
+      RELEASE_TAG:           '${{ inputs.version }}'
+
+    steps:
+    - name: Checkout the repository
+      uses: actions/checkout@v6
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v3
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        global-json-file: global.json
+
+    - name: Load the certificate and set the package publisher
+      shell: pwsh
+      run: |
+        $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+        [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+        $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certPath, $env:SIGNING_PFX_PASSWORD)
+        [xml]$manifest = Get-Content $env:PACKAGE_MANIFEST_PATH
+        $manifest.Package.Identity.Publisher = $cert.Subject
+        # Each release gets a higher version, so Windows installs it as an update.
+        $version = [version]$manifest.Package.Identity.Version
+        $manifest.Package.Identity.Version = "$($version.Major).$($version.Minor).$env:GITHUB_RUN_NUMBER.0"
+        $manifest.Save((Resolve-Path $env:PACKAGE_MANIFEST_PATH).Path)
+        Write-Host "Package publisher: $($cert.Subject), version: $($manifest.Package.Identity.Version)"
+        New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $env:RELEASE_DIR 'Files-Customization.cer'), $cert.Export('Cert'))
+      env:
+        SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+        SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+
+    - name: Restore Files
+      shell: pwsh
+      run: |
+        msbuild $env:SOLUTION_NAME `
+        -t:Restore `
+        -p:Platform=x64 `
+        -p:Configuration=$env:CONFIGURATION `
+        -p:PublishReadyToRun=true `
+        -v:quiet
+
+    - name: Restore NuGet Packages for Launcher Project
+      shell: pwsh
+      run: |
+        nuget restore "$env:LAUNCHER_PROJECT_PATH" `
+          -SolutionDirectory "$env:WORKING_DIR" `
+          -Verbosity quiet
+
+    - name: Build launcher project
+      shell: pwsh
+      run: |
+        msbuild "$env:LAUNCHER_PROJECT_PATH" `
+        -t:Build `
+        -p:Platform=x64 `
+        -p:Configuration=$env:CONFIGURATION `
+        -v:quiet
+
+    - name: Build & package Files
+      shell: pwsh
+      run: |
+        $platforms = "$env:APPX_BUNDLE_PLATFORMS" -split '\|'
+        foreach ($plat in $platforms) {
+          Write-Host "Building for $plat..."
+          msbuild "$env:APP_PROJECT_PATH" `
+            -t:Build `
+            -p:Platform=$plat `
+            -p:Configuration=$env:CONFIGURATION `
+            -p:AppxPackageDir="$env:APPX_PACKAGE_DIR" `
+            -p:AppxBundle=Never `
+            -p:GenerateAppxPackageOnBuild=true `
+            -p:UapAppxPackageBuildMode=SideloadOnly `
+            -p:AppxPackageSigningEnabled=false `
+            -v:quiet
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+
+    - name: Create msixbundle
+      shell: pwsh
+      run: |
+        . './.github/scripts/Create-MsixBundle.ps1' `
+          -AppxPackageDir "$env:APPX_PACKAGE_DIR" `
+          -BundleName "Files.Customization" `
+          -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" `
+          -BuildMode "SideloadOnly"
+
+    - name: Sign the bundle and collect the release files
+      shell: pwsh
+      run: |
+        $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+        $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+          Where-Object { $_.DirectoryName -match '\\x64$' } | Sort-Object FullName -Descending | Select-Object -First 1
+        $bundle = Get-ChildItem $env:APPX_PACKAGE_DIR -Recurse -Filter *.msixbundle | Select-Object -First 1
+        & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:SIGNING_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $bundle.FullName
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Copy-Item $bundle.FullName $env:RELEASE_DIR
+        $dependencies = Join-Path $bundle.DirectoryName 'Dependencies'
+        if (Test-Path $dependencies) { Compress-Archive -Path "$dependencies\*" -DestinationPath (Join-Path $env:RELEASE_DIR 'Dependencies.zip') }
+        Get-ChildItem $env:RELEASE_DIR | ForEach-Object { Write-Host "Release file: $($_.Name)" }
+      env:
+        SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+
+    - name: Create the draft release
+      shell: pwsh
+      run: |
+        $notes = @'
+        Files 4.3 with Settings > Customization: Sidebar, Column details and Shortcut badges. See FEATURES.md for every option.
+
+        ### Install
+        This package is signed with a self-signed certificate, so Windows needs to trust it once:
+
+        1. Download `Files-Customization.cer` and the `.msixbundle` below.
+        2. Double-click the `.cer` file → **Install Certificate** → **Local Machine** → **Place all certificates in the following store** → **Browse** → **Trusted People** → **OK** → **Finish**.
+        3. Double-click the `.msixbundle` file → **Install**.
+
+        If Windows says a required package is missing, unzip `Dependencies.zip` and install the packages in the folder for your PC (`x64` or `ARM64`) first.
+
+        It installs as **Files - Dev**, alongside any Store or installer copy of Files.
+
+        ### Note
+        This is an unofficial fork. Features that rely on the Files team's online services, such as signing in to GitHub for Git repositories and the map in file previews, aren't available in this build.
+        '@
+        $notesPath = Join-Path $env:RUNNER_TEMP 'notes.md'
+        Set-Content -Path $notesPath -Value $notes -Encoding utf8
+        $files = (Get-ChildItem $env:RELEASE_DIR).FullName
+        gh release create $env:RELEASE_TAG @files --draft --target $env:GITHUB_SHA --title "Files Customization $env:RELEASE_TAG" --notes-file $notesPath
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Remove the certificate
+      if: always()
+      shell: pwsh
+      run: Remove-Item (Join-Path $env:RUNNER_TEMP 'signing.pfx') -ErrorAction SilentlyContinue

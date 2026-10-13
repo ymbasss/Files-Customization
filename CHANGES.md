@@ -76,6 +76,11 @@ Paths are relative to `src\`. User documentation for every feature is in `FEATUR
 | `SidebarView.Preview.cs` | Turns a SidebarView into the panel's preview. |
 | `FlatSidebarItem.Appearance.cs` | Legacy section insets and preview row state. |
 
+### Release workflow (`..\.github\workflows\`)
+| File | Purpose |
+|---|---|
+| `release.yml` | Builds, signs (self-signed certificate from repository secrets) and drafts a GitHub Release. Run by hand from Actions. |
+
 ## Changed 4.3 files
 
 | File | Change |
