@@ -129,11 +129,10 @@ jobs:
         $bundle = Get-ChildItem $env:APPX_PACKAGE_DIR -Recurse -Filter *.msixbundle | Select-Object -First 1
         & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:SIGNING_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $bundle.FullName
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        # One zip holds everything: the package, its certificate, the dependency packages and the install script.
+        # One zip holds everything: the package, its certificate and the dependency packages.
         Copy-Item $bundle.FullName $env:PACKAGE_DIR
         $dependencies = Join-Path $bundle.DirectoryName 'Dependencies'
         if (Test-Path $dependencies) { Copy-Item $dependencies $env:PACKAGE_DIR -Recurse }
-        Copy-Item '.github\scripts\Install-FilesCustomization.ps1' (Join-Path $env:PACKAGE_DIR 'Install.ps1')
         New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
         Compress-Archive -Path "$($env:PACKAGE_DIR)*" -DestinationPath (Join-Path $env:RELEASE_DIR "Files-Customization-$env:RELEASE_TAG.zip")
         Get-ChildItem $env:PACKAGE_DIR -Recurse -File | ForEach-Object { Write-Host "In the zip: $($_.FullName.Substring($env:PACKAGE_DIR.Length))" }
@@ -144,18 +143,14 @@ jobs:
       shell: pwsh
       run: |
         $notes = @'
-        Files 4.3 with Settings > Customization: Sidebar, Column details and Shortcut badges. See FEATURES.md for every option.
+        Files 4.3 with Settings > Customization. See FEATURES.md.
 
         ### Install
-        1. Download the `Files-Customization` zip below and unzip it.
-        2. Right-click `Install.ps1` → **Run with PowerShell**.
-        3. Allow the administrator prompt. It's needed once, so Windows trusts the package's self-signed certificate.
+        1. Unzip.
+        2. `Files-Customization.cer` → **Install Certificate** → **Local Machine** → **Trusted People** (once).
+        3. `.msixbundle` → **Install**. If a package is missing, install it from `Dependencies` first.
 
-        The script installs the app with everything it needs. It installs as **Files - Dev**, alongside any Store or installer copy of Files.
-        To update later, run `Install.ps1` from a newer release.
-
-        ### Note
-        This is an unofficial fork. Features that rely on the Files team's online services, such as signing in to GitHub for Git repositories and the map in file previews, aren't available in this build.
+        Unofficial fork; installs as **Files - Dev**. GitHub sign-in and preview maps aren't available.
         '@
         $notesPath = Join-Path $env:RUNNER_TEMP 'notes.md'
         Set-Content -Path $notesPath -Value $notes -Encoding utf8
