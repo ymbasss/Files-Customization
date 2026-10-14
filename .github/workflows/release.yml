@@ -1,11 +1,6 @@
-# Builds, signs and drafts a Files Customization release (sideload package).
-#
-# Run it from Actions > Release > Run workflow. It needs two repository secrets:
-#  SIGNING_PFX_BASE64    the signing certificate (.pfx) encoded as base64
-#  SIGNING_PFX_PASSWORD  the certificate's password
-#
-# The package's publisher is set to the certificate's subject on the build machine only; the manifest in the
-# repository stays unchanged. The release is created as a draft, to be checked and published on GitHub.
+# Builds, signs and drafts a Files Customization release. Run it from Actions > Release > Run workflow.
+# Needs two repository secrets: SIGNING_PFX_BASE64 (the .pfx encoded as base64) and SIGNING_PFX_PASSWORD.
+# The package's publisher and version are set on the build machine only; the manifest in the repository stays unchanged.
 
 name: Release
 
@@ -13,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v4.3-customization.1'
+        description: 'Release tag, for example v4.3-c1.0'
         required: true
 
 permissions:
@@ -23,14 +18,9 @@ jobs:
   release:
     runs-on: windows-2025-vs2026
     env:
-      SOLUTION_NAME:         'Files.slnx'
       CONFIGURATION:         'Release'
-      APPX_BUNDLE_PLATFORMS: 'x64|arm64'
-      WORKING_DIR:           '${{ github.workspace }}'
       APPX_PACKAGE_DIR:      '${{ github.workspace }}\artifacts\AppxPackages\'
       PACKAGE_DIR:           '${{ github.workspace }}\artifacts\InstallPackage\'
-      RELEASE_DIR:           '${{ github.workspace }}\artifacts\ReleaseFiles\'
-      APP_PROJECT_PATH:      'src\Files.App\Files.App.csproj'
       PACKAGE_MANIFEST_PATH: 'src\Files.App\Package.appxmanifest'
       LAUNCHER_PROJECT_PATH: 'src\Files.App.Launcher\Files.App.Launcher.vcxproj'
       RELEASE_TAG:           '${{ inputs.version }}'
@@ -59,7 +49,6 @@ jobs:
         $version = [version]$manifest.Package.Identity.Version
         $manifest.Package.Identity.Version = "$($version.Major).$($version.Minor).$env:GITHUB_RUN_NUMBER.0"
         $manifest.Save((Resolve-Path $env:PACKAGE_MANIFEST_PATH).Path)
-        Write-Host "Package publisher: $($cert.Subject), version: $($manifest.Package.Identity.Version)"
         New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
         [IO.File]::WriteAllBytes((Join-Path $env:PACKAGE_DIR 'Files-Customization.cer'), $cert.Export('Cert'))
       env:
@@ -68,97 +57,53 @@ jobs:
 
     - name: Restore Files
       shell: pwsh
-      run: |
-        msbuild $env:SOLUTION_NAME `
-        -t:Restore `
-        -p:Platform=x64 `
-        -p:Configuration=$env:CONFIGURATION `
-        -p:PublishReadyToRun=true `
-        -v:quiet
+      run: msbuild Files.slnx -t:Restore -p:Platform=x64 -p:Configuration=$env:CONFIGURATION -p:PublishReadyToRun=true -v:quiet
 
-    - name: Restore NuGet Packages for Launcher Project
+    - name: Restore and build the launcher
       shell: pwsh
       run: |
-        nuget restore "$env:LAUNCHER_PROJECT_PATH" `
-          -SolutionDirectory "$env:WORKING_DIR" `
-          -Verbosity quiet
-
-    - name: Build launcher project
-      shell: pwsh
-      run: |
-        msbuild "$env:LAUNCHER_PROJECT_PATH" `
-        -t:Build `
-        -p:Platform=x64 `
-        -p:Configuration=$env:CONFIGURATION `
-        -v:quiet
+        nuget restore "$env:LAUNCHER_PROJECT_PATH" -SolutionDirectory "$env:GITHUB_WORKSPACE" -Verbosity quiet
+        msbuild "$env:LAUNCHER_PROJECT_PATH" -t:Build -p:Platform=x64 -p:Configuration=$env:CONFIGURATION -v:quiet
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Build & package Files
       shell: pwsh
       run: |
-        $platforms = "$env:APPX_BUNDLE_PLATFORMS" -split '\|'
-        foreach ($plat in $platforms) {
-          Write-Host "Building for $plat..."
-          msbuild "$env:APP_PROJECT_PATH" `
-            -t:Build `
-            -p:Platform=$plat `
-            -p:Configuration=$env:CONFIGURATION `
-            -p:AppxPackageDir="$env:APPX_PACKAGE_DIR" `
-            -p:AppxBundle=Never `
-            -p:GenerateAppxPackageOnBuild=true `
-            -p:UapAppxPackageBuildMode=SideloadOnly `
-            -p:AppxPackageSigningEnabled=false `
-            -v:quiet
+        foreach ($platform in 'x64', 'arm64') {
+          msbuild 'src\Files.App\Files.App.csproj' -t:Build -p:Platform=$platform -p:Configuration=$env:CONFIGURATION `
+            -p:AppxPackageDir="$env:APPX_PACKAGE_DIR" -p:AppxBundle=Never -p:GenerateAppxPackageOnBuild=true `
+            -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=false -v:quiet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
 
     - name: Create msixbundle
       shell: pwsh
       run: |
-        . './.github/scripts/Create-MsixBundle.ps1' `
-          -AppxPackageDir "$env:APPX_PACKAGE_DIR" `
-          -BundleName "Files.Customization" `
-          -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" `
-          -BuildMode "SideloadOnly"
+        . './.github/scripts/Create-MsixBundle.ps1' -AppxPackageDir "$env:APPX_PACKAGE_DIR" -BundleName 'Files.Customization' `
+          -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" -BuildMode 'SideloadOnly'
 
-    - name: Sign the bundle and create the install zip
+    - name: Sign the bundle and create the zip
       shell: pwsh
       run: |
-        $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
         $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
           Where-Object { $_.DirectoryName -match '\\x64$' } | Sort-Object FullName -Descending | Select-Object -First 1
         $bundle = Get-ChildItem $env:APPX_PACKAGE_DIR -Recurse -Filter *.msixbundle | Select-Object -First 1
-        & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:SIGNING_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $bundle.FullName
+        & $signtool.FullName sign /fd SHA256 /f (Join-Path $env:RUNNER_TEMP 'signing.pfx') /p $env:SIGNING_PFX_PASSWORD `
+          /tr http://timestamp.digicert.com /td SHA256 $bundle.FullName
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        # One zip holds everything: the package, its certificate and the dependency packages.
+        # The zip holds the package, its certificate and the dependency packages.
         Copy-Item $bundle.FullName $env:PACKAGE_DIR
         $dependencies = Join-Path $bundle.DirectoryName 'Dependencies'
         if (Test-Path $dependencies) { Copy-Item $dependencies $env:PACKAGE_DIR -Recurse }
-        New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
-        Compress-Archive -Path "$($env:PACKAGE_DIR)*" -DestinationPath (Join-Path $env:RELEASE_DIR "Files-Customization-$env:RELEASE_TAG.zip")
-        Get-ChildItem $env:PACKAGE_DIR -Recurse -File | ForEach-Object { Write-Host "In the zip: $($_.FullName.Substring($env:PACKAGE_DIR.Length))" }
+        Compress-Archive -Path "$($env:PACKAGE_DIR)*" -DestinationPath (Join-Path $env:RUNNER_TEMP "Files-Customization-$env:RELEASE_TAG.zip")
       env:
         SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
 
     - name: Create the draft release
       shell: pwsh
       run: |
-        $notes = @'
-        ### Install
-        1. Unzip.
-        2. `Files-Customization.cer` → **Install Certificate** → **Local Machine** → **Trusted People** (once).
-        3. `.msixbundle` → **Install**. If a package is missing, install it from `Dependencies` first.
-
-        Unofficial fork; installs as **Files - Dev**.
-        '@
-        $notesPath = Join-Path $env:RUNNER_TEMP 'notes.md'
-        Set-Content -Path $notesPath -Value $notes -Encoding utf8
-        $files = @((Get-ChildItem $env:RELEASE_DIR -File).FullName)
-        gh release create $env:RELEASE_TAG @files --draft --target $env:GITHUB_SHA --title "Files Customization $env:RELEASE_TAG" --notes-file $notesPath
+        gh release create $env:RELEASE_TAG (Join-Path $env:RUNNER_TEMP "Files-Customization-$env:RELEASE_TAG.zip") --draft `
+          --target $env:GITHUB_SHA --title "Files Customization $env:RELEASE_TAG" --notes ''
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       env:
         GH_TOKEN: ${{ github.token }}
-
-    - name: Remove the certificate
-      if: always()
-      shell: pwsh
-      run: Remove-Item (Join-Path $env:RUNNER_TEMP 'signing.pfx') -ErrorAction SilentlyContinue
