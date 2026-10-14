@@ -7,8 +7,7 @@
 	<!--  Column details: a Reorder columns row with Move up and Move down buttons.  -->
 	<ControlTemplate x:Key="ColumnReorderItemTemplate" TargetType="columnMenus:PersistentColumnMenuItem">
 		<Grid x:Name="LayoutRoot" Margin="{ThemeResource MenuFlyoutItemMargin}" Padding="{TemplateBinding Padding}" ColumnSpacing="8" MinWidth="260"
-			Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
-			x:SuppressXamlTrimWarnings="True">
+			Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}">
 			<VisualStateManager.VisualStateGroups>
 				<VisualStateGroup x:Name="CommonStates">
 					<VisualState x:Name="Normal" />
