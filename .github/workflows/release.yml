@@ -143,14 +143,12 @@ jobs:
       shell: pwsh
       run: |
         $notes = @'
-        Files 4.3 with Settings > Customization. See FEATURES.md.
-
         ### Install
         1. Unzip.
         2. `Files-Customization.cer` → **Install Certificate** → **Local Machine** → **Trusted People** (once).
         3. `.msixbundle` → **Install**. If a package is missing, install it from `Dependencies` first.
 
-        Unofficial fork; installs as **Files - Dev**. GitHub sign-in and preview maps aren't available.
+        Unofficial fork; installs as **Files - Dev**.
         '@
         $notesPath = Join-Path $env:RUNNER_TEMP 'notes.md'
         Set-Content -Path $notesPath -Value $notes -Encoding utf8
