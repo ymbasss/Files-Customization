@@ -1,42 +1,56 @@
-# Files – Customization
+# Files Customization
 
-An **unofficial fork of [Files](https://github.com/files-community/Files) 4.3** that adds **Settings > Customization**:
-three optional features for shaping the sidebar, the details view and shortcut icons.
+Files Customization is an unofficial fork of [Files 4.3](https://github.com/files-community/Files) with more control over the sidebar, the Details view, and shortcut badges.
 
-Each feature has its own switch. When a feature is off, the app runs Files 4.3's original code.
+It adds a **Customization** page to Settings. Each feature has its own switch, so you can enable just the parts you want.
 
-## Features
+<!-- Optional overview screenshot: Settings > Customization with the three feature sections visible. -->
 
-- **Sidebar**: a live editor for the whole sidebar.
-  - Rearrange items by dragging, and create your own groups, separators, gaps and folder shortcuts.
-  - Relabel, hide or restyle any item: icon, size, expansion arrow, inner folders.
-  - Copy one item's look to others with Unify Appearance.
-  - Choose between Files 4.3's look and a **Legacy** style based on the classic Files sidebar.
-  - Undo, Redo and Reset at any time.
-- **Column details**: set the default columns, their order and how they're sized (fit to content, or fit to the window width).
-  The column heading menu gains Fit all columns to width, Reorder columns and Restore to default.
-- **Shortcut badges**: hide the arrow badge on shortcut icons on the Desktop or everywhere.
+## Customize your sidebar
 
-See **[FEATURES.md](https://github.com/ymbasss/Files-Customization/blob/customization/FEATURES.md)** for every option.
+Arrange the sidebar around the folders and tools you use most. The editor shows a live preview beside the selected item's settings, so you can see your changes as you make them.
 
-## Changes from Files 4.3
+- Drag items into the order you want, organize them into custom groups, and add separators or extra space.
+- Duplicate an item to put another link to it elsewhere in the sidebar.
+- Change labels, text and icon sizes, visibility, and expansion behavior. Custom groups can use an icon from the app or an image you import.
+- Apply one item's appearance to its group or the whole sidebar with **Unify Appearance**.
+- Choose the default layout or a **Legacy** style inspired by the classic Files sidebar, with separate options for compact mode.
+- Use Undo, Redo, and Reset to manage your changes.
 
-This branch is Files 4.3 (tag `v4.3`) plus one set of changes. Almost all the new code is in `Customization` folders, and
-Files' own files only gain small hooks.
+You can also enable dragging in the main sidebar to rearrange items there. While that option is on, dragging a folder from the sidebar rearranges its entry instead of moving or copying the folder. Changing a label only changes the name shown in the sidebar.
 
-- **[Compare with Files 4.3](https://github.com/ymbasss/Files-Customization/compare/v4.3...customization)**: every changed and added file.
-- **[CHANGES.md](https://github.com/ymbasss/Files-Customization/blob/customization/CHANGES.md)**: what each file does and what changed in Files' files.
+<!-- Screenshot: the sidebar editor with a custom group, a few rearranged items, and the selected item's settings visible. -->
+<!-- Optional comparison: the same sidebar using Default and Legacy styles. -->
 
-## Building
+## Set up the Details view
 
-Build it the same way as Files: see the official
-[building from source](https://files.community/docs/contributing/building-from-source) guide.
-It installs as **Files - Dev**, alongside a Store or installer copy of Files.
+Choose the columns you want to see by default, drag them into order, and select how they should be sized: the app's default behavior, fitting to their contents, or fitting to the window width.
 
-## Credits and license
+For adjustments to the current view, right-click a column heading. The menu includes commands to fit columns and a **Reorder columns** submenu with move buttons.
 
-Files is made by the [Files Community](https://github.com/files-community). This fork isn't affiliated with or endorsed
-by them. Please report issues with this fork here, not to the Files project.
+<!-- Screenshot: Column details expanded in Settings, showing the column list and sizing options. -->
+<!-- Screenshot: a folder in Details view with the column-heading menu and Reorder columns submenu open. -->
 
-Licensed like Files itself under the [MIT](https://github.com/ymbasss/Files-Customization/blob/customization/LICENSE-MIT) and
-[MPL-2.0](https://github.com/ymbasss/Files-Customization/blob/customization/LICENSE-MPL) licenses.
+## Choose where shortcut badges appear
+
+Hide the small arrow badge on shortcut icons for Desktop items or throughout Files. Additional options cover folders inside the Desktop and Search suggestions.
+
+These options change how badges are displayed inside Files.
+
+<!-- Screenshot: the same shortcut items with badges shown and hidden, using the same folder, layout, and icon size. -->
+
+## Get started
+
+Open **Settings**, choose **Customization** at the bottom of the Settings sidebar, and turn on the features you want to use.
+
+The [feature guide](../FEATURES.md) explains every option. For packaged builds and installation instructions, check [Releases](https://github.com/ymbasss/Files-Customization/releases).
+
+To build the app yourself, follow the Files team's [building from source guide](https://files.community/docs/contributing/building-from-source). The development app is named **Files - Dev**.
+
+## About this fork
+
+Files is developed by the [Files Community](https://github.com/files-community). This fork builds on their work and is not affiliated with or endorsed by the Files team. Please report problems specific to this fork in [this repository](https://github.com/ymbasss/Files-Customization/issues).
+
+For the source changes, see the [change map](../CHANGES.md) or [compare this branch with Files 4.3](https://github.com/ymbasss/Files-Customization/compare/v4.3...customization).
+
+The source retains the [MIT](../LICENSE-MIT) and [MPL-2.0](../LICENSE-MPL) license files from Files.
