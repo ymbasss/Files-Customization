@@ -514,7 +514,11 @@ namespace Files.App.Views.Layouts
 			if (minimum + ColumnsViewModel.IconColumn.Length.Value + 52 > scroller.ViewportWidth) { customFitVerificationRemaining = 0; return; }
 			if (scroller.ScrollableWidth > 0.001)
 			{
-				customFitChromeAdjustment += scroller.ScrollableWidth + 1 / (XamlRoot?.RasterizationScale ?? 1);
+				// The content is wider than the view, so its width is exact: whatever isn't columns, splitters or the icon column is the
+				// row's fixed space. The correction is set from that, never added to, so an earlier overflow can't narrow later fits.
+				var columns = CustomColumns.Where(column => column.Visibility == Visibility.Visible)
+					.Sum(column => column.UserLengthPixels + (column.IsResizable ? 12 : 0)) + ColumnsViewModel.IconColumn.Length.Value;
+				customFitChromeAdjustment = Math.Max(0, scroller.ExtentWidth - columns - 52);
 				FitColumnsToWidth(RootGrid.ActualWidth, false);
 			}
 			else customFitVerificationRemaining = 0;
