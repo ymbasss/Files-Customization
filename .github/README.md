@@ -15,7 +15,6 @@ Arrange the sidebar around the folders and tools you use most. The editor shows 
 - Change labels, text and icon sizes, visibility, and expansion behavior. Custom groups can use an icon from the app or an image you import.
 - Apply one item's appearance to its group or the whole sidebar with **Unify Appearance**.
 - Choose the default layout or a **Legacy** style inspired by the classic Files sidebar, with separate options for compact mode.
-- Use Undo, Redo, and Reset to manage your changes.
 
 You can also enable dragging in the main sidebar to rearrange items there. While that option is on, dragging a folder from the sidebar rearranges its entry instead of moving or copying the folder. Changing a label only changes the name shown in the sidebar.
 
