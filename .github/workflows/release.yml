@@ -62,7 +62,7 @@ jobs:
     - name: Restore and build the launcher
       shell: pwsh
       run: |
-        nuget restore "$env:LAUNCHER_PROJECT_PATH" -SolutionDirectory "$env:GITHUB_WORKSPACE" -Verbosity quiet
+        nuget restore "$env:LAUNCHER_PROJECT_PATH" -SolutionDirectory "$env:GITHUB_WORKSPACE" -Verbosity detailed
         msbuild "$env:LAUNCHER_PROJECT_PATH" -t:Build -p:Platform=x64 -p:Configuration=$env:CONFIGURATION -v:quiet
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -72,7 +72,7 @@ jobs:
         foreach ($platform in 'x64', 'arm64') {
           msbuild 'src\Files.App\Files.App.csproj' -t:Build -p:Platform=$platform -p:Configuration=$env:CONFIGURATION `
             -p:AppxPackageDir="$env:APPX_PACKAGE_DIR" -p:AppxBundle=Never -p:GenerateAppxPackageOnBuild=true `
-            -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=false -v:quiet
+            -p:UapAppxPackageBuildMode=Sideload -v:quiet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
 
@@ -80,7 +80,11 @@ jobs:
       shell: pwsh
       run: |
         . './.github/scripts/Create-MsixBundle.ps1' -AppxPackageDir "$env:APPX_PACKAGE_DIR" -BundleName 'Files.Customization' `
-          -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" -BuildMode 'SideloadOnly'
+          -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" -BuildMode 'Sideload'
+
+    - name: Remove empty files from the packages
+      shell: bash
+      run: find "$GITHUB_WORKSPACE/artifacts" -empty -delete
 
     - name: Sign the bundle and create the zip
       shell: pwsh
