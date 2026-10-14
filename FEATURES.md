@@ -68,7 +68,7 @@ and **Undo changes** reverses the last copy.
 
 | Option | What it does |
 |---|---|
-| **Style** | **Default** is Files 4.3's look. **Legacy** recreates the classic Files (UWP) sidebar: grey section headings, the expand arrow at the right end of each row, and pin icons on pinned folders. In Legacy, long names end with "…" so the arrows stay in view. |
+| **Style** | **Default** is Files 4.3's look. **Legacy** recreates the classic Files sidebar: grey section headings, the expand arrow at the right end of each row, and pin icons on pinned folders.
 | **Show icons** | Ticked: show every icon. Dash: use each item's own setting. Empty: hide every icon. |
 | **Show expansion arrows** | The same three states for the arrows. |
 | **Drag to rearrange sidebar items** | See [Arranging items](#arranging-items). |
