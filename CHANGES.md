@@ -85,7 +85,7 @@ Paths are relative to `src\`. User documentation for every feature is in `FEATUR
 
 | File | Change |
 |---|---|
-| `..\.github\README.md` (repository root) | Replaced with this fork's README. |
+| `..\.github\README.md` (repository root) | Fork introduction, feature overview, getting started, upstream credits, and suggested screenshot locations in HTML comments. |
 | `..\AGENTS.md` (repository root) | Adds a "Customization fork" section with rules for AI coding agents. `CLAUDE.md` links to this file. |
 | `Files.App\Data\Contracts\IAppearanceSettingsService.cs` | Adds `SidebarCustomization` and `CustomizationPreferences` settings. |
 | `Files.App\Data\Enums\SettingsPageKind.cs` | Adds `CustomizationPage`. |
