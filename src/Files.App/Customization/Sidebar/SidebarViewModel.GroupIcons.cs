@@ -49,6 +49,8 @@ namespace Files.App.ViewModels.UserControls
 					Directory.CreateDirectory(folder);
 					await File.WriteAllBytesAsync(target, bytes);
 				}
+				// Imported again after it was deleted: it's kept.
+				File.Delete(target + DeletedIconMarker);
 
 				return target;
 			}
@@ -58,6 +60,11 @@ namespace Files.App.ViewModels.UserControls
 				return null;
 			}
 		}
+
+		// A deleted icon is only marked, with a ".deleted" file next to it, and left out of the list, so Undo can bring it back.
+		// The file itself is removed at the next start of the app, if nothing uses it by then.
+		private const string DeletedIconMarker = ".deleted";
+		private static bool deletedIconsRemoved;
 
 		// Deletes a stored icon; groups using it go back to the default icon.
 		internal void DeleteEditorIcon(string source)
@@ -81,16 +88,13 @@ namespace Files.App.ViewModels.UserControls
 				SaveVisualPreferences(state);
 			}
 
-			var path = source[5..];
 			try
 			{
-				File.Delete(path);
-				if (Path.GetDirectoryName(path) is { } folder && Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
-					Directory.Delete(folder);
+				File.WriteAllText(source[5..] + DeletedIconMarker, "");
 			}
 			catch (Exception ex)
 			{
-				App.Logger?.LogWarning(ex, "Stored sidebar icon could not be deleted");
+				App.Logger?.LogWarning(ex, "Stored sidebar icon could not be marked as deleted");
 			}
 		}
 
@@ -98,25 +102,49 @@ namespace Files.App.ViewModels.UserControls
 		internal IReadOnlyList<string> EditorImportedIcons()
 		{
 			var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var used = SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Entries.Values
+				.Select(entry => entry.IconSource).Where(source => source.StartsWith("file:", StringComparison.Ordinal))
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			try
 			{
 				if (Directory.Exists(EditorIconFolder))
-					foreach (var file in Directory.EnumerateFiles(EditorIconFolder, "*", SearchOption.AllDirectories))
-						sources.Add("file:" + file);
+				{
+					foreach (var file in Directory.EnumerateFiles(EditorIconFolder, "*", SearchOption.AllDirectories).ToArray())
+					{
+						if (file.EndsWith(DeletedIconMarker, StringComparison.OrdinalIgnoreCase)) continue;
+						if (!File.Exists(file + DeletedIconMarker)) sources.Add("file:" + file);
+						// First listing since the app started: no Undo can bring back icons deleted earlier.
+						else if (!deletedIconsRemoved && !used.Contains("file:" + file)) RemoveDeletedIcon(file);
+					}
+					deletedIconsRemoved = true;
+				}
 			}
 			catch (Exception ex)
 			{
 				App.Logger?.LogWarning(ex, "Stored sidebar icons could not be listed");
 			}
 
-			foreach (var entry in SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Entries.Values)
-				if (entry.IconSource.StartsWith("file:", StringComparison.Ordinal))
-					sources.Add(entry.IconSource);
+			sources.UnionWith(used);
 
 			return sources
 				.OrderBy(source => Path.GetFileName(source[5..]), StringComparer.CurrentCultureIgnoreCase)
 				.ThenBy(source => source, StringComparer.OrdinalIgnoreCase)
 				.ToList();
+		}
+
+		private static void RemoveDeletedIcon(string path)
+		{
+			try
+			{
+				File.Delete(path);
+				File.Delete(path + DeletedIconMarker);
+				if (Path.GetDirectoryName(path) is { } folder && !Directory.EnumerateFileSystemEntries(folder).Any())
+					Directory.Delete(folder);
+			}
+			catch (Exception ex)
+			{
+				App.Logger?.LogWarning(ex, "Stored sidebar icon could not be deleted");
+			}
 		}
 
 		private SidebarVisualShortcut CreateVisualShortcut(SidebarCustomizationState.Entry entry)

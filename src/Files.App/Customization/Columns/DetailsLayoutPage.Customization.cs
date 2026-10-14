@@ -32,7 +32,7 @@ namespace Files.App.Views.Layouts
 		private bool contentMeasured;
 		// The folder this view shows, as 4.3 keys its saved layouts.
 		private string? columnsFolderPath;
-		private ulong? columnsFolderFrn;
+		private string? columnsFolderId;
 
 		// The default layout's columns (shown or not, and widths unless the view keeps its own) from Settings.
 		private void ApplyDefaultColumns(bool widths = true)
@@ -74,23 +74,36 @@ namespace Files.App.Views.Layouts
 			return new();
 		}
 
-		// Folder lists in customization.json, matched like 4.3 finds a folder's layout: by path, or by FRN after the folder was renamed
+		// Folder lists in customization.json, matched like 4.3 finds a folder's layout: by path, or by ID after the folder was renamed
 		// or moved. One holds folders that follow the default columns, the other folders that keep their own column widths.
-		private sealed record ListedColumnFolder(ulong? Frn, string Path);
+		private sealed record ListedColumnFolder(string? Id, string Path);
 		private static List<ListedColumnFolder> ReadColumnFolders(string key)
 		{
 			if (!CustomizationSettingsStore.Instance.TryRead(key, out var value)) return [];
 			return value.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line =>
 			{
 				var split = line.IndexOf('|');
+				// An ID saved without its drive (a plain number) isn't used; that folder is found by its path and gets a full ID.
 				return split < 0 ? new ListedColumnFolder(null, line) :
-					new ListedColumnFolder(ulong.TryParse(line[..split], out var frn) ? frn : null, line[(split + 1)..]);
+					new ListedColumnFolder(line[..split].Contains(':') ? line[..split] : null, line[(split + 1)..]);
 			}).ToList();
 		}
 		private static void WriteColumnFolders(string key, List<ListedColumnFolder> folders)
-			=> CustomizationSettingsStore.Instance.Write(key, string.Join('\n', folders.Select(folder => folder.Frn + "|" + folder.Path)));
+			=> CustomizationSettingsStore.Instance.Write(key, string.Join('\n', folders.Select(folder => folder.Id + "|" + folder.Path)));
 		private bool IsThisFolder(ListedColumnFolder folder)
-			=> string.Equals(folder.Path, columnsFolderPath, StringComparison.OrdinalIgnoreCase) || columnsFolderFrn is not null && folder.Frn == columnsFolderFrn;
+			=> string.Equals(folder.Path, columnsFolderPath, StringComparison.OrdinalIgnoreCase) || columnsFolderId is not null && folder.Id == columnsFolderId;
+
+		// A file ID is only unique on its own drive (every NTFS drive's root folder has the same one), so the ID also holds the
+		// drive's serial number.
+		private static string? ColumnFolderId(string path)
+		{
+			try
+			{
+				return global::Windows.Win32.PInvoke.GetVolumeInformation(SystemIO.Path.GetPathRoot(path) ?? path, [], out var serial, out _, out _, []) &&
+					Win32Helper.GetFolderFRN(path) is { } frn ? serial.ToString("X8") + ":" + frn : null;
+			}
+			catch (Exception) { return null; }
+		}
 
 		// Whether this folder is listed; a folder found by its FRN under a new path keeps its place under that path.
 		private bool IsColumnFolderListed(string key)
@@ -98,12 +111,12 @@ namespace Files.App.Views.Layouts
 			if (columnsFolderPath is not { } path) return false;
 			var folders = ReadColumnFolders(key);
 			if (folders.Count == 0) return false;
-			columnsFolderFrn ??= Win32Helper.GetFolderFRN(path);
+			columnsFolderId ??= ColumnFolderId(path);
 			var index = folders.FindIndex(IsThisFolder);
 			if (index < 0) return false;
-			if (!string.Equals(folders[index].Path, path, StringComparison.OrdinalIgnoreCase) || folders[index].Frn != columnsFolderFrn)
+			if (!string.Equals(folders[index].Path, path, StringComparison.OrdinalIgnoreCase) || folders[index].Id != columnsFolderId)
 			{
-				folders[index] = new(columnsFolderFrn, path);
+				folders[index] = new(columnsFolderId, path);
 				WriteColumnFolders(key, folders);
 			}
 			return true;
@@ -114,9 +127,9 @@ namespace Files.App.Views.Layouts
 			if (columnsFolderPath is not { } path) return;
 			var folders = ReadColumnFolders(key);
 			if (!listed && folders.Count == 0) return;
-			columnsFolderFrn ??= Win32Helper.GetFolderFRN(path);
+			columnsFolderId ??= ColumnFolderId(path);
 			var removed = folders.RemoveAll(IsThisFolder) > 0;
-			if (listed) folders.Add(new(columnsFolderFrn, path));
+			if (listed) folders.Add(new(columnsFolderId, path));
 			if (listed || removed) WriteColumnFolders(key, folders);
 		}
 
@@ -154,7 +167,9 @@ namespace Files.App.Views.Layouts
 		// Automatically fit columns to width (also while the window is resized) for this view.
 		private bool AutoFitToWidth => CustomOptions.FitColumnsToWidth;
 		// Column sizing is "App's default": no automatic fitting, and folders show their saved layouts as in 4.3.
-		private bool UsesAppSizing => !CustomOptions.FitColumnsToWidth && !UserSettingsService.LayoutSettingsService.AutoSizeColumnsInDetailsLayout;
+		// Read from Settings, not CustomOptions, which turns fitting off for a folder that keeps its own widths.
+		private bool UsesAppSizing => !CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences).FitColumnsToWidth &&
+			!UserSettingsService.LayoutSettingsService.AutoSizeColumnsInDetailsLayout;
 
 		// Whether this view sizes columns to their content after loading; null while Column details is off (the original setting decides).
 		private bool? CustomAutoSizeToContent => ColumnsActive ? AutoSizeToContent : null;
@@ -421,7 +436,7 @@ namespace Files.App.Views.Layouts
 		private void CustomColumnsNavigatedTo(NavigationArguments? args)
 		{
 			columnsFolderPath = args is { IsSearchResultPage: false } ? args.NavPathParam.TrimPath() : null;
-			columnsFolderFrn = null;
+			columnsFolderId = null;
 			// A folder restored to default while keeping its own sort or view mode shows the current default columns; with the app's
 			// default sizing it keeps its saved widths, as in 4.3.
 			if (ColumnsActive && FollowsDefaultColumns() && FolderSettings is { } folderSettings)
