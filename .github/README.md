@@ -12,17 +12,9 @@ You’ll find everything under **Settings > Customization**. Each feature can be
 
 **Shortcut badges** — Hide the small arrow on shortcut icons for Desktop items or throughout Files. There are also options for folders inside the Desktop and Search suggestions. These settings affect how badges appear inside Files.
 
-<!-- Suggested screenshots:
-1. The sidebar editor with a custom group and an item's settings visible.
-2. Default and Legacy sidebar styles side by side.
-3. Column details settings, showing the column list and sizing options.
-4. The column-heading menu with Reorder columns expanded.
-5. The same shortcut items with badges shown and hidden.
--->
-
 See the [feature guide](../FEATURES.md) for all available options.
 
-## Build and run
+## Build from source
 
 You’ll need Git and **Visual Studio 2026** with these components installed:
 
@@ -48,7 +40,9 @@ Then:
 
 The development app appears as **Files - Dev**. Open **Settings > Customization** to enable the added features.
 
-For more help with your development environment, see the [official build guide](https://files.community/docs/contributing/building-from-source). Packaged builds and installation instructions are available through [Releases](https://github.com/ymbasss/Files-Customization/releases) when published.
+For more help with your development environment, see the [official build guide](https://files.community/docs/contributing/building-from-source).
+
+Packaged builds and installation instructions are available through [Releases](https://github.com/ymbasss/Files-Customization/releases).
 
 ## Credits
 
