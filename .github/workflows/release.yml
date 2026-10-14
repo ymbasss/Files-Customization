@@ -28,6 +28,7 @@ jobs:
       APPX_BUNDLE_PLATFORMS: 'x64|arm64'
       WORKING_DIR:           '${{ github.workspace }}'
       APPX_PACKAGE_DIR:      '${{ github.workspace }}\artifacts\AppxPackages\'
+      PACKAGE_DIR:           '${{ github.workspace }}\artifacts\InstallPackage\'
       RELEASE_DIR:           '${{ github.workspace }}\artifacts\ReleaseFiles\'
       APP_PROJECT_PATH:      'src\Files.App\Files.App.csproj'
       PACKAGE_MANIFEST_PATH: 'src\Files.App\Package.appxmanifest'
@@ -59,8 +60,8 @@ jobs:
         $manifest.Package.Identity.Version = "$($version.Major).$($version.Minor).$env:GITHUB_RUN_NUMBER.0"
         $manifest.Save((Resolve-Path $env:PACKAGE_MANIFEST_PATH).Path)
         Write-Host "Package publisher: $($cert.Subject), version: $($manifest.Package.Identity.Version)"
-        New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
-        [IO.File]::WriteAllBytes((Join-Path $env:RELEASE_DIR 'Files-Customization.cer'), $cert.Export('Cert'))
+        New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $env:PACKAGE_DIR 'Files-Customization.cer'), $cert.Export('Cert'))
       env:
         SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
         SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
@@ -119,7 +120,7 @@ jobs:
           -PackageManifestPath "$env:PACKAGE_MANIFEST_PATH" `
           -BuildMode "SideloadOnly"
 
-    - name: Sign the bundle and collect the release files
+    - name: Sign the bundle and create the install zip
       shell: pwsh
       run: |
         $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
@@ -128,10 +129,14 @@ jobs:
         $bundle = Get-ChildItem $env:APPX_PACKAGE_DIR -Recurse -Filter *.msixbundle | Select-Object -First 1
         & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:SIGNING_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $bundle.FullName
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        Copy-Item $bundle.FullName $env:RELEASE_DIR
+        # One zip holds everything: the package, its certificate, the dependency packages and the install script.
+        Copy-Item $bundle.FullName $env:PACKAGE_DIR
         $dependencies = Join-Path $bundle.DirectoryName 'Dependencies'
-        if (Test-Path $dependencies) { Compress-Archive -Path "$dependencies\*" -DestinationPath (Join-Path $env:RELEASE_DIR 'Dependencies.zip') }
-        Get-ChildItem $env:RELEASE_DIR | ForEach-Object { Write-Host "Release file: $($_.Name)" }
+        if (Test-Path $dependencies) { Copy-Item $dependencies $env:PACKAGE_DIR -Recurse }
+        Copy-Item '.github\scripts\Install-FilesCustomization.ps1' (Join-Path $env:PACKAGE_DIR 'Install.ps1')
+        New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
+        Compress-Archive -Path "$($env:PACKAGE_DIR)*" -DestinationPath (Join-Path $env:RELEASE_DIR "Files-Customization-$env:RELEASE_TAG.zip")
+        Get-ChildItem $env:PACKAGE_DIR -Recurse -File | ForEach-Object { Write-Host "In the zip: $($_.FullName.Substring($env:PACKAGE_DIR.Length))" }
       env:
         SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
 
@@ -142,15 +147,12 @@ jobs:
         Files 4.3 with Settings > Customization: Sidebar, Column details and Shortcut badges. See FEATURES.md for every option.
 
         ### Install
-        This package is signed with a self-signed certificate, so Windows needs to trust it once:
+        1. Download the `Files-Customization` zip below and unzip it.
+        2. Right-click `Install.ps1` → **Run with PowerShell**.
+        3. Allow the administrator prompt. It's needed once, so Windows trusts the package's self-signed certificate.
 
-        1. Download `Files-Customization.cer` and the `.msixbundle` below.
-        2. Double-click the `.cer` file → **Install Certificate** → **Local Machine** → **Place all certificates in the following store** → **Browse** → **Trusted People** → **OK** → **Finish**.
-        3. Double-click the `.msixbundle` file → **Install**.
-
-        If Windows says a required package is missing, unzip `Dependencies.zip` and install the packages in the folder for your PC (`x64` or `ARM64`) first.
-
-        It installs as **Files - Dev**, alongside any Store or installer copy of Files.
+        The script installs the app with everything it needs. It installs as **Files - Dev**, alongside any Store or installer copy of Files.
+        To update later, run `Install.ps1` from a newer release.
 
         ### Note
         This is an unofficial fork. Features that rely on the Files team's online services, such as signing in to GitHub for Git repositories and the map in file previews, aren't available in this build.

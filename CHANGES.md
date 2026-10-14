@@ -79,7 +79,8 @@ Paths are relative to `src\`. User documentation for every feature is in `FEATUR
 ### Release workflow (`..\.github\workflows\`)
 | File | Purpose |
 |---|---|
-| `release.yml` | Builds, signs (self-signed certificate from repository secrets) and drafts a GitHub Release. Run by hand from Actions. |
+| `release.yml` | Builds, signs (self-signed certificate from repository secrets) and drafts a GitHub Release with one install zip. Run by hand from Actions. |
+| `..\scripts\Install-FilesCustomization.ps1` | Published in the install zip as `Install.ps1`: trusts the certificate (one administrator prompt) and installs the app with its dependencies. |
 
 ## Changed 4.3 files
 
