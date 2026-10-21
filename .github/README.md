@@ -2,7 +2,6 @@
 
 This is an unofficial fork of [Files 4.3](https://github.com/files-community/Files) that adds a few more ways to customize the app.
 
-You’ll find everything under **Settings > Customization**. Each feature can be turned on separately, so you can choose what you want to use.
 
 ## Features
 
