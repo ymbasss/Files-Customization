@@ -8,9 +8,9 @@ You’ll find everything under **Settings > Customization**. Each feature can be
 
 **Sidebar** — Arrange items in the order you prefer, put them into custom groups, and add separators or extra space. You can change labels, text and icon sizes, visibility, expansion behavior, duplicate an item, and adjust spacing. Choose between the default layout and a Legacy style inspired by the classic Files sidebar.
 
-**Column details** — Choose your default columns, drag them into order, and decide how they should fit: to their contents, to the window width, or using the app’s default behavior. You can also right-click a column heading to fit or reorder columns in the current view.
+**Column details** — Choose your default columns, drag them into order, and decide how they should fit: to their contents, or to the window width.
 
-**Shortcut badges** — Hide the small arrow on shortcut icons for Desktop items or throughout Files. There are also options for folders inside the Desktop and Search suggestions. These settings affect how badges appear inside Files.
+**Shortcut badges** — Hide the small arrow on shortcut icons for Desktop items or throughout Files. 
 
 
 ## Get started
