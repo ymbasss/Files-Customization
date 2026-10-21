@@ -190,6 +190,7 @@ namespace Files.App.ViewModels.UserControls
 		}
 
 		public bool AreSectionsHidden =>
+			!SidebarCustomizationEnabled &&
 			!ShowPinnedFoldersSection &&
 			!ShowLibrarySection &&
 			!ShowDrivesSection &&
@@ -439,7 +440,7 @@ namespace Files.App.ViewModels.UserControls
 							childItems.Remove(match);
 						}
 						if (e.Action == NotifyCollectionChangedAction.Remove)
-							RemoveSectionItems(section, oldItems);
+							RemoveMovedSectionItems();
 						if (e.Action != NotifyCollectionChangedAction.Remove)
 						{
 							goto case NotifyCollectionChangedAction.Add;
@@ -456,14 +457,14 @@ namespace Files.App.ViewModels.UserControls
 						}
 						foreach (INavigationControlItem elem in childItems.ToList())
 						{
-							if (elem is not SidebarVisualDecoration and not SidebarVisualShortcut && !getElements().Any(x => x.Path == elem.Path))
+							if (elem is not SidebarVisualDecoration and not SidebarVisualShortcut && !getElements().Any(x => x.Path == elem.Path) && !IsMovedFromOtherSection(elem, section))
 							{
 								if (elem is ExpandableSidebarItemBase expandable)
 									expandable.StopWatchingSubfoldersAndDescendants();
 								childItems.Remove(elem);
 							}
 						}
-						RemoveMovedSectionItems(section, path => !getElements().Any(x => x.Path == path));
+						RemoveMovedSectionItems();
 
 						break;
 					}

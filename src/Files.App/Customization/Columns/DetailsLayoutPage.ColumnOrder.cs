@@ -129,7 +129,8 @@ namespace Files.App.Views.Layouts
 		private void ApplyColumnRow(StackPanel panel, int[] order)
 		{
 			if (!originalColumnRows.TryGetValue(panel, out var state) || state.Applying) return;
-			if (ReferenceEquals(state.Order, order) && state.Children.SequenceEqual(panel.Children)) return;
+			// By value: tabs with different column orders keep replacing the parser's single cached array.
+			if (state.Order?.SequenceEqual(order) == true && state.Children.SequenceEqual(panel.Children)) return;
 			state.Applying = true;
 			try
 			{

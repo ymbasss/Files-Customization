@@ -31,17 +31,17 @@ namespace Files.App.ViewModels.UserControls
 
 		internal bool HasEditorFolderAppearance(string key)
 		{
-			return SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Entries.ContainsKey(EditorFolderKey(key));
+			return EditableCustomization.Entries.ContainsKey(EditorFolderKey(key));
 		}
 
 		internal SidebarCustomizationState.Entry EditorFolderEntry(string key)
 		{
-			return SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Get(EditorFolderKey(key));
+			return EditableCustomization.Get(EditorFolderKey(key));
 		}
 
 		internal void SetEditorFolderAppearance(string key, bool separate)
 		{
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var folderKey = EditorFolderKey(key);
 			if (separate == state.Entries.ContainsKey(folderKey))
 				return;
@@ -56,22 +56,44 @@ namespace Files.App.ViewModels.UserControls
 		}
 		internal sealed record EditorRow(string Key, string Name, string Parent, int Depth, bool Group, bool Decoration,
 			bool Removable, bool Available, SidebarCustomizationState.Entry Entry, bool CanExpand = false, bool CanEditName = true, bool CanHidePin = false,
-			bool ViewOnly = false);
-		internal sealed record EditorSnapshot(string Sidebar, string Options, int Sections);
+			bool ViewOnly = false, string OriginalName = "");
+		internal sealed record EditorSnapshot(string Sidebar, int Sections);
 
 		internal event EventHandler? EditorIconsChanged;
 		private void NotifyEditorIconChanged() => EditorIconsChanged?.Invoke(this, EventArgs.Empty);
-		internal bool SidebarCustomizationEnabled => EditorOptions.CustomizationEnabled && EditorOptions.SidebarEnabled;
+		internal bool SidebarCustomizationEnabled => EditorOptions.SidebarEnabled;
 		public Visibility SettingsFooterVisibility => ReadCustomization.Get(VisualKey(SettingsSidebarItem)) is { Hidden: false, Group.Length: 0 }
 			? Visibility.Visible : Visibility.Collapsed;
 
 		// Each Settings page (Customization > Sidebar) has its own panel, which works only while its page is shown. What the panels
 		// share is kept here, so a panel shown again in another tab picks up where the last one left off.
 		// The panel's Undo and Redo history, kept in memory until the app closes so it survives closing and reopening the panel.
-		internal CustomizationChangeHistory<EditorSnapshot> EditorHistory { get; } = new(snapshot => (snapshot.Sidebar.Length + snapshot.Options.Length) * 2L, 4 * 1024 * 1024);
+		internal CustomizationChangeHistory<EditorSnapshot> EditorHistory { get; } = new(snapshot => snapshot.Sidebar.Length * 2L, 4 * 1024 * 1024);
 		// Preview rows collapsed by the user, and rows whose starting state has been decided.
 		internal HashSet<string> EditorCollapsed { get; } = new(StringComparer.OrdinalIgnoreCase);
 		internal HashSet<string> EditorPreviewFolderParents { get; } = new(StringComparer.OrdinalIgnoreCase);
+		// What Unify Appearance copies.
+		internal sealed record UnifyChoice(bool Size = true, bool Icon = true, bool Arrow = true, bool Pin = true);
+		internal UnifyChoice EditorUnify { get; set; } = new();
+		// Built-in space between two rows' highlights: each row's 2 px top and bottom margins.
+		internal const int EditorBaseRowGap = 4;
+		// The top-level rows Unify Appearance > Customize changes (a section counts with everything in it).
+		internal HashSet<string> EditorUnifySections { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+		internal string EditorTopLevelKey(string key) => EditorRows() is var rows && rows.FirstOrDefault(row => row.Key == key) is { } row ? TopLevelKey(row, rows) : "";
+
+		// The rows Customize offers: every shown top-level row except separators and gaps; sections, and items such as Home.
+		internal List<EditorRow> EditorTopLevelRows()
+			=> EditorRows().Where(row => row.Parent == VisualRootKey && !row.Decoration && !row.Entry.Hidden).ToList();
+
+		// The top-level row a row sits under (a top-level row gives itself), or "" for a row outside the sidebar list (Settings).
+		private static string TopLevelKey(EditorRow row, List<EditorRow> rows)
+		{
+			var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			while (row.Parent != VisualRootKey && visited.Add(row.Key) && rows.FirstOrDefault(parent => parent.Key == row.Parent) is { } parent)
+				row = parent;
+			return row.Parent == VisualRootKey ? row.Key : "";
+		}
 		// The item selected in a panel, where a panel shown next starts.
 		internal string? EditorSelectedKey { get; private set; }
 		private int editorPanelsShown;
@@ -280,40 +302,83 @@ namespace Files.App.ViewModels.UserControls
 		internal bool IsEditorSettingsRow(string key) => key == VisualKey(SettingsSidebarItem);
 		private static bool CanExpandEditorItem(INavigationControlItem item) => item is not SidebarVisualDecoration &&
 			(item.HasUnrealizedChildren || item.Children is System.Collections.ICollection { Count: > 0 });
-		// Undo and Redo snapshots hold only the sidebar's own options. Other settings saved in the same place (columns,
-		// shortcut badges) change on their own and must not break the history.
-		internal EditorSnapshot CaptureEditor() => new(UserSettingsService.AppearanceSettingsService.SidebarCustomization,
-			WithSidebarOptions(new(), EditorOptions).Serialize(),
-			(ShowPinnedFoldersSection ? 1 : 0) | (ShowLibrarySection ? 2 : 0) | (ShowDrivesSection ? 4 : 0) |
-			(ShowCloudDrivesSection ? 8 : 0) | (ShowNetworkSection ? 16 : 0) | (ShowWslSection ? 32 : 0) | (ShowFileTagsSection ? 64 : 0));
+		// Undo and Redo snapshots hold the sidebar's items and its section switches. Options (everything in the Options flyout) are
+		// separate and never undone, and so are tag names: the panel renames a tag in Files, as Settings > Tags does. Drive, folder
+		// and tag IDs are left out too: the sidebar saves them by itself after an item first gets an entry (for example after Unify
+		// Appearance's Apply).
+		internal EditorSnapshot CaptureEditor() => new(WithoutIds(UserSettingsService.AppearanceSettingsService.SidebarCustomization),
+			EditorSections.Select((section, index) => EditorSectionVisible(section.Section) ? 1 << index : 0).Sum());
+		private static IList<TagViewModel> EditorTags => Ioc.Default.GetRequiredService<IFileTagsSettingsService>().FileTagList ?? [];
+		// Raised when the sidebar saved items under new keys by itself (a renamed tag or pinned folder, a drive under another letter).
+		internal event Action<IReadOnlyList<(string From, string To)>>? EditorEntriesRenamed;
+		internal static string RenameEditorEntries(string sidebar, IEnumerable<(string From, string To)> renames)
+		{
+			var state = SidebarCustomizationState.Parse(sidebar);
+			foreach (var (from, to) in renames) RenameVisualEntry(state, from, to);
+			return state.Serialize();
+		}
+		// What the details show for an item: its row, its inner-folder look and the top-level rows Unify Appearance offers. IDs
+		// are left out; the sidebar saves them by itself.
+		internal string EditorDetailsState(string? key)
+		{
+			var state = SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			return string.Join("\n", EditorRows().Where(row => row.Key == key).Select(row => (row with { Entry = row.Entry with { Id = "" } }).ToString())
+				.Append(key is null ? "" : (state.Get(EditorFolderKey(key)) with { Id = "" }).ToString())
+				.Concat(EditorTopLevelRows().Select(row => row.Key + "\t" + row.Name)));
+		}
+		// The built-in sections after Home, in sidebar order, with their names. A property, so it never runs before EditorGroupIcons is set.
+		private static IEnumerable<(SectionType Section, string Label)> EditorSections => EditorGroupIcons.Skip(1);
 		private static CustomizationPreferences WithSidebarOptions(CustomizationPreferences target, CustomizationPreferences source) => target with
 		{
 			SidebarDragEnabled = source.SidebarDragEnabled,
 			SharpLargeIcons = source.SharpLargeIcons,
 			SidebarKeepTextPosition = source.SidebarKeepTextPosition,
 			SidebarAppearance = source.SidebarAppearance,
+			SidebarItemSpacing = source.SidebarItemSpacing,
+			SidebarSectionSpacing = source.SidebarSectionSpacing,
 			SidebarCompactShowIcons = source.SidebarCompactShowIcons,
 			SidebarCompactGroupContents = source.SidebarCompactGroupContents,
 			SidebarCompactIconMode = source.SidebarCompactIconMode,
 			SidebarCompactIconSize = source.SidebarCompactIconSize,
-			SidebarCompactHideGroupIcons = source.SidebarCompactHideGroupIcons
+			SidebarCompactIconSizeChosen = source.SidebarCompactIconSizeChosen,
+			SidebarCompactHideGroupIcons = source.SidebarCompactHideGroupIcons,
+			SidebarCompactItemSpacing = source.SidebarCompactItemSpacing
 		};
+		// Kept for the last saved layout, since the panel takes snapshots often.
+		private static (string Source, string Result)? lastWithoutIds;
+		private static string WithoutIds(string sidebar)
+		{
+			if (lastWithoutIds is { } cached && cached.Source == sidebar) return cached.Result;
+			var state = SidebarCustomizationState.Parse(sidebar);
+			foreach (var entry in state.Entries.Values.ToArray())
+			{
+				// An item's entry with nothing saved but its ID (a renamed tag's, for example) is the sidebar's own record, like the ID.
+				if (entry.Key.StartsWith("item:", StringComparison.Ordinal) && IsUnsetEntry(entry)) state.Entries.Remove(entry.Key);
+				else if (entry.Id.Length > 0) state.Entries[entry.Key] = entry with { Id = "" };
+			}
+			var result = state.Serialize();
+			lastWithoutIds = (sidebar, result);
+			return result;
+		}
+		// Nothing is saved for the item, apart from its ID.
+		private static bool IsUnsetEntry(SidebarCustomizationState.Entry entry) => entry with { Id = "" } == new SidebarCustomizationState.Entry(entry.Key);
 		internal void RestoreEditor(EditorSnapshot snapshot)
 		{
-			UserSettingsService.AppearanceSettingsService.SidebarCustomization = snapshot.Sidebar;
-			// Only the sidebar's options come back; everything else keeps its current value.
-			SaveEditorOptions(WithSidebarOptions(EditorOptions, CustomizationPreferences.Parse(snapshot.Options)));
-			ShowPinnedFoldersSection = (snapshot.Sections & 1) != 0; ShowLibrarySection = (snapshot.Sections & 2) != 0;
-			ShowDrivesSection = (snapshot.Sections & 4) != 0; ShowCloudDrivesSection = (snapshot.Sections & 8) != 0;
-			ShowNetworkSection = (snapshot.Sections & 16) != 0; ShowWslSection = (snapshot.Sections & 32) != 0;
-			ShowFileTagsSection = (snapshot.Sections & 64) != 0;
+			// Snapshots hold no IDs, so every ID already found is kept, on its own when the step saved nothing else for the item.
+			var restored = SidebarCustomizationState.Parse(snapshot.Sidebar);
+			var current = SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			foreach (var now in current.Entries.Values.Where(now => now.Id.Length > 0))
+				restored.Entries[now.Key] = (restored.Entries.TryGetValue(now.Key, out var entry) ? entry : new SidebarCustomizationState.Entry(now.Key)) with { Id = now.Id };
+			UserSettingsService.AppearanceSettingsService.SidebarCustomization = restored.Serialize();
+			foreach (var (section, index) in EditorSections.Select((section, index) => (section.Section, index)))
+				SetEditorSectionVisible(section, (snapshot.Sections & 1 << index) != 0);
 		}
 		internal void SaveEditorOptions(CustomizationPreferences options)
 			=> UserSettingsService.AppearanceSettingsService.CustomizationPreferences = options.Serialize();
 
 		internal List<EditorRow> EditorRows()
 		{
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var rows = new List<EditorRow>();
 			var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			// Rows inside something hidden (a hidden group, or a section switched off with the app's switch) are dimmed with it;
@@ -327,7 +392,10 @@ namespace Files.App.ViewModels.UserControls
 					var entry = state.Get(key);
 					var hidden = entry.Hidden || insideHidden || IsSectionSwitchedOff(item);
 					entry = entry with { Hidden = hidden };
-					var name = entry.Label.Length > 0 ? entry.Label : item.Text ?? "";
+					// A duplicate's name is exactly its label, blank included, whatever happens to what it copies; its title is the name of
+					// what it copies. Other items show their label, or their own name without one.
+					var ownName = item is SidebarVisualShortcut ? VisualShortcutSourceName(entry) : EditorOwnName(item);
+					var name = item is SidebarVisualShortcut ? entry.Label : entry.Label.Length > 0 && item is not FileTagItem ? entry.Label : ownName;
 					if (item is SidebarVisualDecoration) name = (entry.Separator ? Strings.SidebarEditorSeparator : Strings.SidebarEditorGap).GetLocalizedResource();
 					var group = IsCustomizationGroup(item);
 					var canEditName = group || parentIsGroup || key.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) ||
@@ -336,25 +404,27 @@ namespace Files.App.ViewModels.UserControls
 						key.StartsWith(VisualGroupPrefix, StringComparison.Ordinal) ||
 							key.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) ||
 							item is SidebarVisualDecoration,
-						true, entry, CanExpandEditorItem(item), canEditName, HasLegacyPin(item, state)));
+						true, entry, CanExpandEditorItem(item), canEditName, HasLegacyPin(item, state), OriginalName: ownName));
 					// Sub-folders follow their sub-item and are not listed in the panel.
 					if (group && item.Children is IEnumerable<INavigationControlItem> children) Visit(children, key, depth + 1, group, hidden);
 				}
 			}
 			Visit(sidebarItems, VisualRootKey, 0);
-			foreach (var section in new[] { (SectionType.Pinned, Strings.Pinned), (SectionType.Library, Strings.SidebarLibraries),
-				(SectionType.Drives, Strings.Drives), (SectionType.CloudDrives, Strings.SidebarCloudDrives),
-				(SectionType.Network, Strings.Network), (SectionType.WSL, Strings.WSL), (SectionType.FileTag, Strings.FileTags) })
+			foreach (var section in EditorSections)
 			{
-				var key = "section:" + section.Item1;
+				var key = "section:" + section.Section;
 				var entry = state.Get(key);
 				// Sections not in the sidebar at all (for example Cloud Drives with no cloud drives) still get a row.
-				if (seen.Add(key)) rows.Add(new(key, entry.Label is { Length: > 0 } name ? name : section.Item2.GetLocalizedResource(),
-					VisualRootKey, 0, true, false, false, false, entry with { Hidden = entry.Hidden || !EditorSectionVisible(section.Item1) }));
+				if (seen.Add(key)) rows.Add(new(key, entry.Label is { Length: > 0 } name ? name : section.Label.GetLocalizedResource(),
+					VisualRootKey, 0, true, false, false, false, entry with { Hidden = entry.Hidden || !EditorSectionVisible(section.Section) },
+					OriginalName: section.Label.GetLocalizedResource()));
 			}
 			if (!seen.Contains(VisualKey(SettingsSidebarItem))) Visit(new[] { SettingsSidebarItem }, EditorFooterKey, 0);
+			// Saved items not in the sidebar now (an unplugged drive, for example). A tag's saved settings aren't listed: a renamed tag
+			// gets them back by itself, and a deleted one is gone.
 			foreach (var saved in state.Entries.Values.Where(entry => !seen.Contains(entry.Key) && !IsVisualSubFolderKey(entry.Key) &&
-				!entry.Key.StartsWith(EditorFolderPrefix, StringComparison.Ordinal)))
+				!entry.Key.StartsWith(EditorFolderPrefix, StringComparison.Ordinal) &&
+				!(entry.Key.StartsWith("item:", StringComparison.Ordinal) && AbsentEditorName(entry.Key).StartsWith("tag:", StringComparison.Ordinal))))
 			{
 				var entry = state.Get(saved.Key);
 				var name = entry.Key.StartsWith(VisualDecorationPrefix, StringComparison.Ordinal)
@@ -362,7 +432,7 @@ namespace Files.App.ViewModels.UserControls
 					: entry.Label.Length > 0 ? entry.Label : AbsentEditorName(entry.Key);
 				rows.Add(new(entry.Key, name, entry.Group.Length > 0 ? entry.Group : VisualRootKey, 0,
 					entry.Key.StartsWith(VisualGroupPrefix, StringComparison.Ordinal), entry.Key.StartsWith(VisualDecorationPrefix, StringComparison.Ordinal),
-					entry.Key.StartsWith("sidebar-", StringComparison.Ordinal), false, entry));
+					entry.Key.StartsWith("sidebar-", StringComparison.Ordinal), false, entry, OriginalName: AbsentEditorName(entry.Key)));
 			}
 			var ordered = new List<EditorRow>();
 			var orderedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -378,6 +448,16 @@ namespace Files.App.ViewModels.UserControls
 			ordered.AddRange(rows.Where(row => orderedKeys.Add(row.Key)));
 			return ordered;
 		}
+
+		// An item's own name. INavigationControlItem.Text is the name the sidebar shows, a label included.
+		private static string EditorOwnName(INavigationControlItem item) => item switch
+		{
+			LocationItem location => location.Text,
+			DriveItem drive => drive.Text ?? "",
+			FileTagItem tag => tag.Text ?? "",
+			WslDistroItem distro => distro.Text ?? "",
+			_ => item.Text ?? ""
+		};
 
 		// The name of a saved item the sidebar doesn't show: its path, also for a drive's entry put aside under its ID ("#id#path").
 		private static string AbsentEditorName(string key)
@@ -400,7 +480,11 @@ namespace Files.App.ViewModels.UserControls
 		// The app's own section switch, also used by the sidebar's right-click menu.
 		private void SetEditorSectionVisible(string key, bool visible)
 		{
-			if (!key.StartsWith("section:", StringComparison.Ordinal) || !Enum.TryParse<SectionType>(key[8..], out var section)) return;
+			if (key.StartsWith("section:", StringComparison.Ordinal) && Enum.TryParse<SectionType>(key[8..], out var section))
+				SetEditorSectionVisible(section, visible);
+		}
+		private void SetEditorSectionVisible(SectionType section, bool visible)
+		{
 			switch (section)
 			{
 				case SectionType.Pinned: ShowPinnedFoldersSection = visible; break;
@@ -412,9 +496,41 @@ namespace Files.App.ViewModels.UserControls
 				case SectionType.FileTag: ShowFileTagsSection = visible; break;
 			}
 		}
+		// A tag's name belongs to the tag: the panel renames the tag in Files (as Settings > Tags does) instead of giving it a label.
+		internal bool IsEditorTag(string key) => ResolveEditorPreviewItem(key) is FileTagItem { FileTag: not null };
+
+		// Settings > Tags' own rule: not empty or blank, not starting or ending with a period, and not another tag's name.
+		internal bool IsEditorTagNameValid(string key, string name)
+		{
+			var own = (ResolveEditorPreviewItem(key) as FileTagItem)?.FileTag;
+			return !string.IsNullOrWhiteSpace(name) && !name.StartsWith('.') && !name.EndsWith('.') &&
+				!EditorTags.Any(other => other.Name == name && other.Uid != own?.Uid);
+		}
+
+		// A duplicated tag whose tag no longer exists.
+		internal bool IsEditorMissingTagCopy(EditorRow row)
+			=> row.Entry.SourceKey.Length > 0 && row.Entry.Target.StartsWith("tag:", StringComparison.Ordinal) &&
+				!EditorTags.Any(tag => FolderSearch.FormatTagQuery(tag.Name) == row.Entry.Target);
+
+		// Renames the tag in Files' own tag settings, exactly as Settings > Tags does; Undo doesn't reverse it. Its entry keeps the
+		// tag's ID first, so the sidebar moves its look and place to the new name, as for any renamed tag.
+		internal bool RenameEditorTag(string key, string name)
+		{
+			if (ResolveEditorPreviewItem(key) is not FileTagItem { FileTag: { } tag } || name.Length == 0 || name == tag.Name || !IsEditorTagNameValid(key, name))
+				return false;
+			var state = EditableCustomization;
+			if (state.Get(key).Id != "tag:" + tag.Uid)
+			{
+				state.Entries[key] = state.Get(key) with { Id = "tag:" + tag.Uid };
+				SaveVisualPreferences(state);
+			}
+			Ioc.Default.GetRequiredService<IFileTagsSettingsService>().EditTag(tag.Uid, name, tag.Color);
+			return true;
+		}
+
 		internal void EditSidebarEntry(string key, Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry> update)
 		{
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var original = state.Get(key);
 			if (key.StartsWith("section:", StringComparison.Ordinal) && Enum.TryParse<SectionType>(key[8..], out var section) && !EditorSectionVisible(section))
 				original = original with { Hidden = true };
@@ -424,11 +540,11 @@ namespace Files.App.ViewModels.UserControls
 			// Built-in sections are shown and hidden with the app's own section switch, the same one as the sidebar's
 			// right-click menu, so the panel and that menu always agree.
 			var builtInSection = key.StartsWith("section:", StringComparison.Ordinal) && Enum.TryParse<SectionType>(key[8..], out var sectionType) && sectionType != SectionType.Home;
-			var hideSection = builtInSection && updated.Hidden;
+			var visible = !updated.Hidden;
 			if (builtInSection) updated = updated with { Hidden = false };
 			state.Entries[key] = updated;
 			SaveVisualPreferences(state);
-			if (builtInSection) SetEditorSectionVisible(key, !hideSection);
+			if (builtInSection) SetEditorSectionVisible(key, visible);
 		}
 
 		internal bool CanMoveEditorRow(string key, string target, bool inside)
@@ -457,7 +573,7 @@ namespace Files.App.ViewModels.UserControls
 			var siblings = rows.Where(row => row.Parent == parent && row.Key != key).Select(row => row.Key).ToList();
 			var index = inside ? siblings.Count : siblings.IndexOf(target) + (after ? 1 : 0);
 			siblings.Insert(Math.Clamp(index, 0, siblings.Count), key);
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var item = VisualItems().FirstOrDefault(item => VisualKey(item) == key);
 			var entry = state.Get(key);
 			if (item is not null) RememberVisualPlacement(item);
@@ -479,8 +595,11 @@ namespace Files.App.ViewModels.UserControls
 			var source = rows.FirstOrDefault(row => row.Key == key);
 			if (source is null || !CanDuplicateEditorRow(source)) return key;
 			var item = ResolveEditorPreviewItem(source.Key)!;
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var entry = state.Get(source.Key);
+			// A tag keeps its ID, so a copy (which saves the tag's path) still follows the tag when it is renamed anywhere.
+			if (item is FileTagItem { FileTag: { } tag } && entry.Id.Length == 0)
+				state.Entries[source.Key] = entry = entry with { Id = "tag:" + tag.Uid };
 			var copyKey = VisualShortcutPrefix + Guid.NewGuid().ToString("N");
 			var parent = source.Parent == EditorFooterKey ? VisualRootKey : source.Parent;
 			state.Entries[copyKey] = entry with
@@ -518,8 +637,8 @@ namespace Files.App.ViewModels.UserControls
 			// Home is a heading without contents, so it counts as an item here.
 			var intoGroup = kind != "group" && selected is { Group: true } && selected.Key != "section:Home";
 			var parent = selected is null ? VisualRootKey : intoGroup ? selected.Key : selected.Parent;
-			var key = (kind == "group" ? VisualGroupPrefix : kind == "shortcut" ? VisualShortcutPrefix : VisualDecorationPrefix) + Guid.NewGuid().ToString("N");
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var key = (kind == "group" ? VisualGroupPrefix : VisualDecorationPrefix) + Guid.NewGuid().ToString("N");
+			var state = EditableCustomization;
 			var siblings = rows.Where(row => row.Parent == parent).Select(row => row.Key).ToList();
 			var settingsIndex = siblings.FindIndex(IsEditorSettingsRow);
 			var index = selected is not null && !intoGroup ? siblings.IndexOf(selected.Key) + 1
@@ -527,20 +646,17 @@ namespace Files.App.ViewModels.UserControls
 			siblings.Insert(Math.Clamp(index, 0, siblings.Count), key);
 			state.Entries[key] = state.Get(key) with
 			{
-				Label = kind == "group"
-					? Strings.CustomizationSidebarNewGroupName.GetLocalizedResource()
-					: kind == "shortcut" ? Strings.CustomizationSidebarNewShortcutName.GetLocalizedResource() : "",
+				Label = kind == "group" ? Strings.CustomizationSidebarNewGroupName.GetLocalizedResource() : "",
 				Group = parent, Separator = kind == "separator",
 				// Only separators and gaps have a height; groups keep the default, so their Reset stays greyed out when unchanged.
-				Gap = kind == "separator" ? SidebarCustomizationStyle.DefaultSeparatorHeight
-					: kind == "gap" ? SidebarCustomizationStyle.DefaultDecorationHeight : new SidebarCustomizationState.Entry(key).Gap
+				Gap = kind is "separator" or "gap" ? SidebarCustomizationStyle.DefaultDecorationHeight : new SidebarCustomizationState.Entry(key).Gap
 			};
 			for (var i = 0; i < siblings.Count; i++) { var entry = state.Get(siblings[i]); state.Entries[entry.Key] = entry with { Order = i }; }
 			SaveVisualPreferences(state); return key;
 		}
 		internal void ResetEditorEntry(string key, bool remove = false)
 		{
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var previous = state.Get(key);
 			if (remove)
 			{
@@ -586,7 +702,7 @@ namespace Files.App.ViewModels.UserControls
 		{
 			var changes = GetEditorAppearanceChanges(key, scope);
 			if (changes.Count == 0) return;
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			foreach (var change in changes) state.Entries[change.Key] = change.Value;
 			SaveVisualPreferences(state);
 		}
@@ -594,50 +710,66 @@ namespace Files.App.ViewModels.UserControls
 		private Dictionary<string, SidebarCustomizationState.Entry> GetEditorAppearanceChanges(string key, int scope)
 		{
 			var changes = new Dictionary<string, SidebarCustomizationState.Entry>(StringComparer.OrdinalIgnoreCase);
-			if (!SidebarCustomizationEnabled || scope is < 1 or > 3) return changes;
+			if (!SidebarCustomizationEnabled || scope is not (3 or 4)) return changes;
 			var rows = EditorRows(); var selected = rows.FirstOrDefault(row => row.Key == key);
 			if (selected is null) return changes;
-			var group = selected.Group ? selected.Key : selected.Parent;
-			bool InGroup(EditorRow row)
-			{
-				var ancestors = new HashSet<string>();
-				while (ancestors.Add(row.Key))
-				{
-					if (row.Key == group || row.Parent == group) return true;
-					var parent = rows.FirstOrDefault(parent => parent.Key == row.Parent);
-					if (parent is null) return false; row = parent;
-				}
-				return false;
-			}
 			var options = EditorOptions;
+			var unify = EditorUnify;
 			var legacy = options.SidebarAppearance == 1;
 			bool LegacyHeading(EditorRow row) => legacy && SidebarCustomizationStyle.IsLegacyHeader(row.Group, row.Key);
-			// Only what can be changed on the source item is copied, in both appearances: its expansion only when it has an
-			// arrow to change, its icon setting only when it isn't a Legacy heading (those never show an icon), and its pin
-			// only when it shows one. Each is copied only to items that can take it; anything else keeps its own value.
-			var copyExpansion = selected.CanExpand;
-			var copyIcon = !LegacyHeading(selected);
-			var copyPin = legacy && selected.CanHidePin;
+			// Entire sidebar (3), or the sections chosen under Customize (4), headings included.
+			bool InScope(EditorRow row) => scope == 3 || EditorUnifySections.Contains(TopLevelKey(row, rows));
+			// Only what is chosen, and can be changed on the source item, is copied: its expansion only when it has an arrow to
+			// change, its icon setting only when it isn't a Legacy heading (those never show an icon), and its pin only when it
+			// shows one. Each is copied only to items that can take it; anything else keeps its own value.
+			var copyExpansion = unify.Arrow && selected.CanExpand;
+			var copyIcon = unify.Icon && !LegacyHeading(selected);
+			var copyPin = unify.Pin && legacy && selected.CanHidePin;
 			var legacyExpansion = legacy && copyExpansion ? (int?)SidebarCustomizationStyle.ExpansionMode(selected.Entry, selected.Group, options) : null;
-			foreach (var row in rows.Where(row =>
-				row.Key != key && !row.Decoration && !IsEditorSettingsRow(row.Key) &&
-				(scope == 3 || scope == 2 && InGroup(row) || scope == 1 && row.Parent == selected.Parent)))
+			// Separators and gaps take the item's row height, so they keep in proportion with the items they sit between.
+			var decorationHeight = ResolveEditorPreviewItem(key) is ISidebarItemAppearanceModel { SidebarLook: { } look }
+				? (int)Math.Clamp(Math.Round(look.RowHeight), 4, 64) : (int?)null;
+			SidebarCustomizationState.Entry Copy(SidebarCustomizationState.Entry target, SidebarCustomizationState.Entry source, EditorRow row, bool folder)
 			{
-				var appearance = SidebarCustomizationStyle.CopyAppearance(row.Entry, selected.Entry, legacyExpansion);
-				if (!copyExpansion || !row.CanExpand)
-					appearance = appearance with { HideArrow = row.Entry.HideArrow, ExpansionLock = row.Entry.ExpansionLock, LegacyExpansion = row.Entry.LegacyExpansion };
-				else if (legacyExpansion.HasValue &&
-					SidebarCustomizationStyle.ExpansionMode(appearance, row.Group, options) == SidebarCustomizationStyle.ExpansionMode(row.Entry, row.Group, options))
-					appearance = appearance with { LegacyExpansion = row.Entry.LegacyExpansion };
-				if (!copyIcon || LegacyHeading(row)) appearance = appearance with { HideIcon = row.Entry.HideIcon };
-				// A Legacy heading shows no icon, so its custom text size sets the icon size too, in the default proportion, linked.
-				if (!copyIcon && selected.Entry.TextPt > 0)
+				var appearance = target;
+				if (unify.Size)
 				{
-					var ratio = SidebarCustomizationStyle.DefaultPoints(0, false, options);
-					appearance = appearance with { IconPt = Math.Clamp(selected.Entry.TextPt * ratio.Icon / ratio.Text, 6, 48), SizesLinked = true };
+					appearance = appearance with { Size = source.Size, TextPt = source.TextPt, IconPt = source.IconPt, SizesLinked = source.SizesLinked };
+					// A Legacy heading shows no icon, so its custom text size sets the icon size too, in the default proportion, linked.
+					if (LegacyHeading(selected) && !folder && source.TextPt > 0)
+					{
+						var ratio = SidebarCustomizationStyle.DefaultPoints(0, options);
+						appearance = appearance with { IconPt = Math.Clamp(source.TextPt * ratio.Icon / ratio.Text, 6, 48), SizesLinked = true };
+					}
 				}
-				if (copyPin && row.CanHidePin) appearance = appearance with { HidePin = selected.Entry.HidePin };
-				if (appearance != row.Entry) changes.Add(row.Key, appearance);
+				if (copyIcon && (folder || !LegacyHeading(row))) appearance = appearance with { HideIcon = source.HideIcon };
+				// Inner folders always expand normally.
+				if (copyExpansion && row.CanExpand && !folder)
+				{
+					if (!legacyExpansion.HasValue)
+						appearance = appearance with { HideArrow = source.HideArrow, ExpansionLock = source.ExpansionLock };
+					else if (legacyExpansion != SidebarCustomizationStyle.ExpansionMode(target, row.Group, options))
+						appearance = appearance with { LegacyExpansion = legacyExpansion };
+				}
+				if (copyPin && row.CanHidePin && !folder) appearance = appearance with { HidePin = source.HidePin };
+				return appearance;
+			}
+			var state = ReadCustomization;
+			// The inner folders take the item's own separate folder look when it has one, otherwise its own look.
+			var folderSource = state.Entries.TryGetValue(EditorFolderKey(key), out var selectedFolders) ? selectedFolders : selected.Entry;
+			// Every row in the scope takes what it can use: sections, groups and items the chosen settings, inner folders styled
+			// separately the size and icon, and separators and gaps the item's height when Size is copied.
+			foreach (var row in rows.Where(row => row.Key != key && !IsEditorSettingsRow(row.Key) && InScope(row)))
+			{
+				if (!row.Decoration && state.Entries.TryGetValue(EditorFolderKey(row.Key), out var folders))
+				{
+					var foldersAppearance = Copy(folders, folderSource, row, true);
+					if (foldersAppearance != folders) changes[folders.Key] = foldersAppearance;
+				}
+				var appearance = row.Decoration
+					? unify.Size && decorationHeight is { } height ? row.Entry with { Gap = height } : row.Entry
+					: Copy(row.Entry, selected.Entry, row, false);
+				if (appearance != row.Entry) changes[row.Key] = appearance;
 			}
 			return changes;
 		}
@@ -645,40 +777,19 @@ namespace Files.App.ViewModels.UserControls
 		{
 			SaveVisualPreferences(new());
 			SaveEditorOptions(DefaultSidebarOptions(EditorOptions));
-
-			var sections = new[]
-			{
-				SectionType.Pinned,
-				SectionType.Library,
-				SectionType.Drives,
-				SectionType.CloudDrives,
-				SectionType.Network,
-				SectionType.WSL,
-				SectionType.FileTag
-			};
-			foreach (var section in sections)
-				ShowEditorSection("section:" + section);
-			ShowLibrarySection = false;
+			foreach (var section in EditorSections)
+				SetEditorSectionVisible(section.Section, IsDefaultSectionVisible(section.Section));
 		}
-		private static CustomizationPreferences DefaultSidebarOptions(CustomizationPreferences options) => options with
-		{
-			SidebarDragEnabled = true,
-			SharpLargeIcons = true,
-			SidebarKeepTextPosition = true,
-			SidebarAppearance = 0,
-			SidebarCompactShowIcons = true,
-			SidebarCompactGroupContents = false,
-			SidebarCompactIconMode = 0,
-			SidebarCompactIconSize = 24,
-			SidebarCompactHideGroupIcons = false
-		};
-		// True when Reset sidebar would change nothing, so its Reset buttons can be greyed out.
+		// The app shows every section except Libraries by default.
+		private static bool IsDefaultSectionVisible(SectionType section) => section != SectionType.Library;
+		private static CustomizationPreferences DefaultSidebarOptions(CustomizationPreferences options) => WithSidebarOptions(options, new());
+		// True when Reset sidebar would change nothing, so its Reset buttons can be greyed out. IDs the sidebar saved by itself don't count.
 		internal bool IsSidebarEditorDefault()
 		{
 			var options = EditorOptions;
 			return options == DefaultSidebarOptions(options)
-				&& SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Entries.Values.All(entry => entry == new SidebarCustomizationState.Entry(entry.Key))
-				&& ShowPinnedFoldersSection && !ShowLibrarySection && ShowDrivesSection && ShowCloudDrivesSection && ShowNetworkSection && ShowWslSection && ShowFileTagsSection;
+				&& SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization).Entries.Values.All(IsUnsetEntry)
+				&& EditorSections.All(section => EditorSectionVisible(section.Section) == IsDefaultSectionVisible(section.Section));
 		}
 	}
 }

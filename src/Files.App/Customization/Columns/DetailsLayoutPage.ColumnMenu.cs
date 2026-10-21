@@ -334,7 +334,7 @@ namespace Files.App.Views.Layouts
 		}
 		private void MoveCustomColumn(int index, int direction)
 		{
-			if (!customColumnsReady || !CustomOptions.ColumnsEnabled || !CustomOptions.CustomizationEnabled ||
+			if (!customColumnsReady || !CustomOptions.ColumnsEnabled ||
 				(uint)index >= (uint)CustomColumns.Length || direction is not (-1 or 1)) return;
 			// Reordering changes this view only, like resizing; Restore to default undoes it.
 			var order = CustomizationColumnOrder.MoveShown(CustomizationColumnOrder.Parse(CustomOptions.ColumnOrder), index, direction,

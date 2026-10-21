@@ -17,6 +17,11 @@ namespace Files.App.Helpers
 		private static readonly ConditionalWeakTable<FrameworkElement, Session> sessions = new();
 		private sealed record EditCallbacks(Action Commit, Action? Cancel, bool CommitOnPointer);
 		private static readonly ConditionalWeakTable<Control, EditCallbacks> callbacks = new();
+		private static readonly ConditionalWeakTable<Control, object> excluded = new();
+
+		// A box that handles Enter and Escape itself, such as a tag's name box, which keeps a name it can't save until it is changed.
+		// Clicking elsewhere still finishes its edit like any other box's.
+		internal static void Exclude(Control editor) => excluded.AddOrUpdate(editor, new object());
 
 		internal static void Register(Control editor, Action commit, Action? cancel = null, bool commitOnPointer = true)
 		{
@@ -158,6 +163,7 @@ namespace Files.App.Helpers
 				}
 				ClearKey();
 				var control = Editor(args.OriginalSource as DependencyObject, out var input);
+				if (control is not null && excluded.TryGetValue(control, out _)) return;
 				if (control is not null)
 				{
 					keyEdit = ReferenceEquals(active?.Control, control) ? active : Start(control, input!);

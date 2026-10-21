@@ -33,6 +33,12 @@ namespace Files.App.Data.Models
 				}
 			}
 		}
+		// Rewrites every stored state, for a change the app made by itself (an item saved under a new key) that Undo must not reverse.
+		internal void Map(Func<T, T> map)
+		{
+			for (var index = 0; index < undo.Count; index++) undo[index] = (map(undo[index].Before), map(undo[index].After));
+			for (var index = 0; index < redo.Count; index++) redo[index] = (map(redo[index].Before), map(redo[index].After));
+		}
 		internal bool Undo(T current, out T result)
 		{
 			result = current;

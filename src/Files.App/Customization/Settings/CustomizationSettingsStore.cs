@@ -124,10 +124,12 @@ namespace Files.App.Services.Settings
 		{
 			if (readFailed) return;
 			writer.Wait();
-			using var mutex = new Mutex(false, $"Files-{AppLifecycleHelper.AppEnvironment}-Customization");
+			Mutex? mutex = null;
 			var ownsMutex = false;
 			try
 			{
+				// Inside the try: a mutex made by an elevated Files process can't be opened by a normal one (UnauthorizedAccessException).
+				mutex = new Mutex(false, $"Files-{AppLifecycleHelper.AppEnvironment}-Customization");
 				try { ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(2)); }
 				catch (AbandonedMutexException) { ownsMutex = true; }
 
@@ -176,7 +178,8 @@ namespace Files.App.Services.Settings
 			finally
 			{
 				if (ownsMutex)
-					mutex.ReleaseMutex();
+					mutex!.ReleaseMutex();
+				mutex?.Dispose();
 				writer.Release();
 			}
 		}

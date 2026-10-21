@@ -31,30 +31,15 @@ namespace Files.App.ViewModels.UserControls
 		private CustomizationPreferences? lastSidebarAppearance;
 
 		private static bool HasSameSidebarAppearance(CustomizationPreferences options, CustomizationPreferences previous)
-		{
-			return
-				options.CustomizationEnabled == previous.CustomizationEnabled &&
-				options.SidebarEnabled == previous.SidebarEnabled &&
-				options.SidebarCompactShowIcons == previous.SidebarCompactShowIcons &&
-				options.SidebarCompactGroupContents == previous.SidebarCompactGroupContents &&
-				options.SidebarCompactIconMode == previous.SidebarCompactIconMode &&
-				options.SidebarCompactIconSize == previous.SidebarCompactIconSize &&
-				options.SidebarCompactHideGroupIcons == previous.SidebarCompactHideGroupIcons &&
-				options.SidebarDragEnabled == previous.SidebarDragEnabled &&
-				options.SidebarAppearance == previous.SidebarAppearance &&
-				options.SharpLargeIcons == previous.SharpLargeIcons &&
-				options.SidebarKeepTextPosition == previous.SidebarKeepTextPosition;
-		}
-
-		private static bool IsSidebarCustomizationOn(CustomizationPreferences options) => options.CustomizationEnabled && options.SidebarEnabled;
+			=> options.SidebarEnabled == previous.SidebarEnabled && WithSidebarOptions(new(), options) == WithSidebarOptions(new(), previous);
 
 		private void RefreshVisualAppearanceOnly(bool force = false)
 		{
-			var options = CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
+			var options = CurrentOptions;
 			// Nothing of ours to refresh while customization stays off (switching it off resets the items in RefreshVisualSidebar),
 			// and nothing to do when the look didn't change, unless a refresh is forced.
 			if (lastSidebarAppearance is { } previous &&
-				(!IsSidebarCustomizationOn(options) && !IsSidebarCustomizationOn(previous) || !force && HasSameSidebarAppearance(options, previous)))
+				(!options.SidebarEnabled && !previous.SidebarEnabled || !force && HasSameSidebarAppearance(options, previous)))
 				return;
 
 			var compactContentsChanged = lastSidebarAppearance?.SidebarCompactGroupContents != options.SidebarCompactGroupContents;
@@ -198,6 +183,13 @@ namespace Files.App.ViewModels.UserControls
 			return group;
 		}
 
+		// The added row a saved entry stands for (group, separator or gap, shortcut); null for the app's own items and sections.
+		private INavigationControlItem? CreateVisualItem(SidebarCustomizationState.Entry entry, bool? expanded = null)
+			=> entry.Key.StartsWith(VisualGroupPrefix, StringComparison.Ordinal) ? CreateVisualGroup(entry, expanded)
+				: entry.Key.StartsWith(VisualDecorationPrefix, StringComparison.Ordinal) ? CreateVisualDecoration(entry)
+				: entry.Key.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) ? CreateVisualShortcut(entry)
+				: null;
+
 		private static HashSet<string> CollapsedVisualGroups()
 			=> new(CustomizationSettingsStore.Instance.TryRead(CustomizationSettingsStore.SidebarCollapsedGroupsKey, out var value)
 				? value.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
@@ -230,13 +222,14 @@ namespace Files.App.ViewModels.UserControls
 			ApplyVisualOrder(children);
 		}
 
-		private SidebarCustomizationState Customization =>
-			CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences).SidebarEnabled
-				? SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization)
-				: new();
+		// The options in effect (a switched-off feature's options at their off values), and an editable copy of the saved sidebar.
+		private CustomizationPreferences CurrentOptions => CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
+		private SidebarCustomizationState EditableCustomization => SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+
+		private SidebarCustomizationState Customization => CurrentOptions.SidebarEnabled ? EditableCustomization : new();
 
 		private SidebarCustomizationState ReadCustomization =>
-			CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences).SidebarEnabled
+			CurrentOptions.SidebarEnabled
 				? SidebarCustomizationState.ReadSnapshot(UserSettingsService.AppearanceSettingsService.SidebarCustomization)
 				: emptyCustomization;
 		private static readonly SidebarCustomizationState emptyCustomization = new();
@@ -283,7 +276,7 @@ namespace Files.App.ViewModels.UserControls
 		private bool HandleVisualItemInvoked(INavigationControlItem item)
 		{
 			if (item is SidebarVisualDecoration) return true;
-			if (item.Path?.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) == true && ReadCustomization.Get(VisualKey(item)).Target.Length == 0) return true;
+			if (item is SidebarVisualShortcut && ReadCustomization.Get(VisualKey(item)).Target.Length == 0) return true;
 			if (item is not SidebarVisualGroup) return false;
 			item.IsExpanded = !item.IsExpanded;
 			return true;
@@ -292,7 +285,14 @@ namespace Files.App.ViewModels.UserControls
 		// A row dragged to rearrange the sidebar ("Drag to rearrange").
 		private async Task<bool> HandleVisualDragOverAsync(ItemDragOverEventArgs args)
 		{
-			if (!args.DroppedItem.Contains(SidebarView.ReorderDataFormat)) return false;
+			if (!args.DroppedItem.Contains(SidebarView.ReorderDataFormat))
+			{
+				if (!IsVisualDropTarget(args.DropTarget)) return false;
+				// Added rows have no folder of their own (their path is a key), so files can't be dropped on them.
+				args.RawEvent.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.None;
+				args.RawEvent.Handled = true;
+				return true;
+			}
 			var key = await args.DroppedItem.GetDataAsync(SidebarView.ReorderDataFormat) as string;
 			args.RawEvent.AcceptedOperation = TryGetVisualDrop(key, args.DropTarget, args.dropPosition, out _, out _, out _, out _)
 				? global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move : global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.None;
@@ -300,9 +300,11 @@ namespace Files.App.ViewModels.UserControls
 			return true;
 		}
 
+		private static bool IsVisualDropTarget(object target) => target is SidebarVisualGroup or SidebarVisualDecoration or SidebarVisualShortcut;
+
 		private async Task<bool> HandleVisualDropAsync(ItemDroppedEventArgs args)
 		{
-			if (!args.DroppedItem.Contains(SidebarView.ReorderDataFormat)) return false;
+			if (!args.DroppedItem.Contains(SidebarView.ReorderDataFormat)) return IsVisualDropTarget(args.DropTarget);
 			var key = await args.DroppedItem.GetDataAsync(SidebarView.ReorderDataFormat) as string;
 			MoveVisualDrop(key, args.DropTarget, args.dropPosition);
 			args.RawEvent.Handled = true;
@@ -313,7 +315,7 @@ namespace Files.App.ViewModels.UserControls
 			item is SidebarVisualGroup or LocationItem { IsHeader: true };
 
 		private static string VisualKey(INavigationControlItem item) =>
-			item is SidebarVisualGroup or SidebarVisualDecoration || item.Path?.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) == true
+			item is SidebarVisualGroup or SidebarVisualDecoration or SidebarVisualShortcut
 				? item.Path!
 				: item is LocationItem { IsHeader: true }
 					? "section:" + item.Section
@@ -400,15 +402,15 @@ namespace Files.App.ViewModels.UserControls
 			if (item is not LocationItem { IsHeader: false } || item is SidebarVisualGroup or SidebarVisualDecoration) return false;
 			var group = state.Get(VisualKey(item)).Group;
 			return group.Length > 0 ? string.Equals(group, "section:Pinned", StringComparison.OrdinalIgnoreCase)
-				: item.Section == SectionType.Pinned && item.Path?.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) != true;
+				: item.Section == SectionType.Pinned && item is not SidebarVisualShortcut;
 		}
 
 		// fixedEntry styles an item the sidebar doesn't hold (folders listed only for the panel preview) with a given look.
 		private void ApplyVisualPreferences(INavigationControlItem item, CustomizationPreferences? options = null, SidebarCustomizationState? state = null,
 			SidebarCustomizationState.Entry? fixedEntry = null)
 		{
-			options ??= CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
-			if (!options.CustomizationEnabled || !options.SidebarEnabled)
+			options ??= CurrentOptions;
+			if (!options.SidebarEnabled)
 			{
 				ResetVisualPreferences(item);
 				return;
@@ -429,33 +431,36 @@ namespace Files.App.ViewModels.UserControls
 				if (GetVisualIcon(original) is { } originalIcon) shortcut.Icon = originalIcon;
 			}
 
-			appearance.SidebarHidden = entry.Hidden || IsSectionSwitchedOff(item);
-			appearance.SidebarDisplayName = item is SidebarVisualDecoration ? "" : string.IsNullOrWhiteSpace(entry.Label) ? null : entry.Label;
+			// A tag always shows its own name (renamed in Settings > Tags or the panel's Tag name box). A duplicate shows exactly its
+			// label, blank included, and never takes a new name from what it copies.
+			appearance.SidebarDisplayName = item is SidebarVisualDecoration ? "" : item is FileTagItem ? null : item is SidebarVisualShortcut ? entry.Label :
+				string.IsNullOrWhiteSpace(entry.Label) ? null : entry.Label;
 			var legacy = options.SidebarAppearance == 1;
 			if (item is LocationItem location) location.SidebarPinVisible = legacy && HasLegacyPin(item, customization) && !entry.HidePin;
 			var legacyHeader = SidebarCustomizationStyle.IsLegacyHeader(IsCustomizationGroup(item), VisualKey(item));
-			var drive = item is DriveItem { Section: SectionType.Drives } || entry.SourceKey.StartsWith("item:Drives:", StringComparison.Ordinal);
-			var size = !options.SidebarEnabled ? 0 : entry.Size < 0 ? drive && !legacy ? 1 : 0 : entry.Size;
+			var size = Math.Max(0, entry.Size);
 			var rowHeight = size switch { 1 => 48, 2 => 64, _ => 32 };
-			var points = SidebarCustomizationStyle.DefaultPoints(size, drive, options, legacyHeader);
-			double iconSize = CustomizationPreferences.ToPixels(points.Icon);
-			double fontSize = CustomizationPreferences.ToPixels(points.Text);
-			if (entry.TextPt > 0) fontSize = CustomizationPreferences.ToPixels(entry.TextPt);
-			if (entry.IconPt > 0) iconSize = CustomizationPreferences.ToPixels(entry.IconPt);
-			appearance.SidebarFontSize = fontSize;
-			appearance.SidebarIconSize = iconSize;
-			appearance.SidebarIconVisible = SidebarCustomizationStyle.IconVisible(entry, legacy && legacyHeader);
-			appearance.SidebarKeepTextPosition = options.SidebarKeepTextPosition;
-			appearance.SidebarCompactShowIcons = options.SidebarCompactShowIcons;
+			var points = SidebarCustomizationStyle.DefaultPoints(size, options, legacyHeader);
+			var iconSize = CustomizationPreferences.ToPixels(entry.IconPt > 0 ? entry.IconPt : points.Icon);
+			var fontSize = CustomizationPreferences.ToPixels(entry.TextPt > 0 ? entry.TextPt : points.Text);
+			var iconVisible = SidebarCustomizationStyle.IconVisible(entry, legacy && legacyHeader);
+			var decoration = item is SidebarVisualDecoration;
 			// The Settings button at the bottom keeps the original compact icon size.
 			var settingsFooter = ReferenceEquals(item, SettingsSidebarItem);
-			appearance.SidebarCompactIconMode = settingsFooter ? 0 : options.SidebarCompactIconMode;
-			appearance.SidebarCompactIconSize = options.SidebarCompactIconSize;
-			appearance.SidebarCompactHideGroupIcon = options.SidebarCompactHideGroupIcons && IsCustomizationGroup(item);
-			appearance.SidebarCompactGroupContents = options.SidebarCompactGroupContents;
 			// Inner folder entries always use the normal expansion, so they expand normally.
 			var expansion = SidebarCustomizationStyle.ExpansionMode(entry, IsCustomizationGroup(item), options);
-			appearance.SidebarArrowVisible = expansion != 2;
+			var look = new SidebarLook(
+				RowHeight: decoration ? entry.Gap : Math.Max(rowHeight, Math.Max(fontSize * 1.35, iconVisible ? iconSize : 0) + 12),
+				IconSize: iconSize, FontSize: fontSize, IconVisible: iconVisible, KeepTextPosition: options.SidebarKeepTextPosition,
+				LegacyAppearance: legacy && !decoration, LegacyHeader: legacyHeader, CompactShowIcons: options.SidebarCompactShowIcons,
+				CompactIconMode: settingsFooter ? 0 : options.SidebarCompactIconMode, CompactIconSize: options.SidebarCompactIconSize,
+				CompactHideGroupIcon: options.SidebarCompactHideGroupIcons && IsCustomizationGroup(item),
+				CompactGroupContents: options.SidebarCompactGroupContents, ArrowVisible: expansion != 2, Decoration: decoration,
+				Separator: decoration && entry.Separator, Hidden: entry.Hidden || IsSectionSwitchedOff(item),
+				// Separators and gaps are spacing already, and the Settings button sits apart at the bottom, so the extra space between
+				// rows leaves them as set.
+				Spacing: decoration || settingsFooter ? 0 : options.SidebarItemSpacing,
+				CompactSpacing: decoration || settingsFooter ? 0 : options.SidebarCompactItemSpacing);
 			var lockBefore = appearance.SidebarExpansionLock;
 			// A forced expansion isn't the user's choice, so the app's own expansion memory (per tab and its saved sections) doesn't record it.
 			Interlocked.Increment(ref applyingTabStateDepth);
@@ -463,52 +468,29 @@ namespace Files.App.ViewModels.UserControls
 			finally { Interlocked.Decrement(ref applyingTabStateDepth); }
 			// No longer forced: the item opens or closes as the user last left it.
 			if (lockBefore != 0 && appearance.SidebarExpansionLock == 0) ApplyTabStateToNewlyAddedItem(item);
-			appearance.SidebarLegacyHeader = legacyHeader;
-			appearance.SidebarLegacyAppearance = legacy && item is not SidebarVisualDecoration;
-			appearance.SidebarDecoration = item is SidebarVisualDecoration;
-			appearance.SidebarSeparator = appearance.SidebarDecoration && entry.Separator;
-			appearance.SidebarRowHeight = appearance.SidebarDecoration
-				? entry.Gap
-				: Math.Max(rowHeight, Math.Max(fontSize * 1.35, appearance.SidebarIconVisible ? iconSize : 0) + 12);
 			// The compact icon size only applies while the sidebar is compact; the full sidebar keeps its own icon size.
 			var compact = IsCompactDisplayMode;
-			var displayIconSize = compact ? settingsFooter ? 16 : options.CompactIconPixels : appearance.SidebarIconSize;
-			if (options.SharpLargeIcons && (appearance.SidebarIconVisible || compact && appearance.SidebarCompactShowIcons) && displayIconSize > 16)
+			var displayIconSize = compact ? settingsFooter ? 16 : options.CompactIconPixels : iconSize;
+			if (options.SharpLargeIcons && (iconVisible || compact && look.CompactShowIcons) && displayIconSize > 16)
 				UpgradeVisualIcon(item, displayIconSize);
 			else RestoreVisualIcon(item);
-			appearance.SidebarCustomized = true;
+			appearance.SidebarLook = look;
 		}
 
 		// Sidebar customization is off: the item goes back to its original values once, and is left alone after that.
 		private void ResetVisualPreferences(INavigationControlItem item)
 		{
 			var appearance = item as ISidebarItemAppearanceModel;
-			if (appearance is not { SidebarCustomized: true } && (item as ISidebarItemReorderModel)?.SidebarDragKey is null)
+			if (appearance?.SidebarLook is null && (item as ISidebarItemReorderModel)?.SidebarDragKey is null)
 				return;
 			if (item is ISidebarItemReorderModel reorder) reorder.SidebarDragKey = null;
 			if (appearance is null) return;
-			appearance.SidebarCustomized = false;
-			appearance.SidebarHidden = false;
+			appearance.SidebarLook = null;
 			appearance.SidebarDisplayName = null;
 			if (item is LocationItem location) location.SidebarPinVisible = false;
-			appearance.SidebarFontSize = 14;
-			appearance.SidebarIconSize = 16;
-			appearance.SidebarIconVisible = true;
-			appearance.SidebarKeepTextPosition = false;
-			appearance.SidebarCompactShowIcons = true;
-			appearance.SidebarCompactIconMode = 0;
-			appearance.SidebarCompactIconSize = 24;
-			appearance.SidebarCompactHideGroupIcon = false;
-			appearance.SidebarCompactGroupContents = false;
-			appearance.SidebarArrowVisible = true;
 			var lockBefore = appearance.SidebarExpansionLock;
 			appearance.SidebarExpansionLock = 0;
 			if (lockBefore != 0) ApplyTabStateToNewlyAddedItem(item);
-			appearance.SidebarLegacyHeader = false;
-			appearance.SidebarLegacyAppearance = false;
-			appearance.SidebarDecoration = false;
-			appearance.SidebarSeparator = false;
-			appearance.SidebarRowHeight = 32;
 			RestoreVisualIcon(item);
 		}
 
@@ -579,7 +561,7 @@ namespace Files.App.ViewModels.UserControls
 		private SidebarCustomizationState? lastSidebarStructure;
 		private void RefreshVisualSidebar()
 		{
-			var options = CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
+			var options = CurrentOptions;
 			var state = ReadCustomization;
 			visualParents = null;
 			var expandedGroups = VisualItems()
@@ -595,28 +577,21 @@ namespace Files.App.ViewModels.UserControls
 					if (group.ChildItems is { } children)
 						foreach (var child in children.Where(child =>
 							child is not SidebarVisualGroup and not SidebarVisualDecoration &&
-							child.Path?.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) != true).ToArray())
+							child is not SidebarVisualShortcut).ToArray())
 						{
 							children.Remove(child);
 							if (!sidebarItems.Contains(child)) sidebarItems.Add(child);
 						}
-				foreach (var item in VisualItems().Where(item =>
-					item is SidebarVisualGroup or SidebarVisualDecoration ||
-					item.Path?.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal) == true))
+				foreach (var item in VisualItems().Where(item => item is SidebarVisualGroup or SidebarVisualDecoration or SidebarVisualShortcut))
 				{
+					// An expanded shortcut watches its folder; stop it, as the app does for items it removes.
+					(item as ExpandableSidebarItemBase)?.StopWatchingSubfoldersAndDescendants();
 					FindVisualSiblings(item)?.Remove(item);
 					UntrackSidebarItem(item);
 				}
 				foreach (var entry in state.Entries.Values)
 				{
-					INavigationControlItem? item = null;
-					if (entry.Key.StartsWith(VisualGroupPrefix, StringComparison.Ordinal))
-						item = CreateVisualGroup(entry, expandedGroups.TryGetValue(entry.Key, out var expanded) ? expanded : null);
-					else if (entry.Key.StartsWith(VisualDecorationPrefix, StringComparison.Ordinal))
-						item = CreateVisualDecoration(entry);
-					else if (entry.Key.StartsWith(VisualShortcutPrefix, StringComparison.Ordinal))
-						item = CreateVisualShortcut(entry);
-					if (item is null) continue;
+					if (CreateVisualItem(entry, expandedGroups.TryGetValue(entry.Key, out var expanded) ? expanded : null) is not { } item) continue;
 					sidebarItems.Add(item);
 					TrackSidebarItem(item);
 				}

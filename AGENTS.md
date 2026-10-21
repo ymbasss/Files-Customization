@@ -59,7 +59,7 @@ This project is a C#/.NET WinUI 3 desktop app; an alternative to File Explorer.
 
 ## Customization fork
 
-This fork adds Settings > Customization to Files 4.3: Sidebar, Column details and Shortcut badges. See `FEATURES.md` for the
+This fork adds Settings > Customization to Files 4.3: Sidebar, Column details and Shortcut badges. See `.github/README.md` for the
 features and `CHANGES.md` for a map of every added and changed file.
 
 - Put customization code in the `Customization` folders (`src/Files.App/Customization`, `src/Files.App.Controls/Customization`),
@@ -67,7 +67,7 @@ features and `CHANGES.md` for a map of every added and changed file.
 - In Files' own files, add only small hooks that call into that code, usually one line. Don't restructure Files' code.
 - A switched-off feature must run Files 4.3's original code exactly. Check the feature's switch before changing any behaviour.
 - Add new user-visible strings to `src/Files.App/Strings/en-US/Resources.resw` with a `Customization` or `SidebarEditor` prefix.
-- When you add, remove or newly change a file, update `CHANGES.md`. When a user-facing option changes, update `FEATURES.md`.
+- When you add, remove or newly change a file, update `CHANGES.md`. When a user-facing option changes, update `.github/README.md`.
 
 ## Build
 

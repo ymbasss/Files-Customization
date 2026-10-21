@@ -52,9 +52,10 @@ namespace Files.App.ViewModels.UserControls
 
 		private Button? itemReset;
 		private string? itemResetKey;
+		// As wide as the Spacing steppers and the compact Icon size box below it, so the right-hand controls line up.
 		private readonly ComboBox appearanceChoice = new()
 		{
-			MinWidth = 140,
+			Width = 132,
 			SelectedIndex = -1,
 			VerticalAlignment = VerticalAlignment.Center
 		};
@@ -76,12 +77,16 @@ namespace Files.App.ViewModels.UserControls
 		private readonly List<Action> pendingTextCommits = [];
 		private double previewRatio = 1d / 3;
 		private int changeDepth;
+		// A tag renamed in the Tag name box, until the sidebar has saved it under its new name.
+		private string? renamingTagKey;
+		// A size being typed or stepped: applied at once, saved as one Undo step when it is confirmed (Enter or clicking away).
+		private EditorSnapshot? liveBefore;
 		private EditorSnapshot? localChangeSnapshot;
-		private int appearanceScope = 2;
+		private int appearanceScope = 3;
 		private bool appearanceExpanded;
+		private bool foldersExpanded = true;
 		private Action? updateAppearanceApply;
 		private Action? updateGroupIconPreview;
-		private (string Key, EditorSnapshot After)? appearanceUndo;
 
 		[DynamicWindowsRuntimeCast(typeof(Border))]
 		[DynamicWindowsRuntimeCast(typeof(Grid))]
@@ -89,28 +94,16 @@ namespace Files.App.ViewModels.UserControls
 		internal SidebarCustomizationPanel(SidebarViewModel owner)
 		{
 			this.owner = owner;
+			// The Segmented control's style isn't loaded app-wide; the status bar loads it the same way.
+			Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("ms-appx:///CommunityToolkit.WinUI.Controls.Segmented/Segmented/Segmented.xaml") });
 			Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 			SettingsValueEditing.Attach(this);
 			Margin = new Thickness(0);
 			RowDefinitions.Add(new() { Height = GridLength.Auto });
 			RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
 			RowDefinitions.Add(new() { Height = GridLength.Auto });
-			var contentBackground = (Grid)XamlReader.Load(
-				"""
-				<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" IsHitTestVisible="False">
-					<Border Background="{ThemeResource App.Theme.Sidebar.BackgroundBrush}" />
-					<Border Background="{ThemeResource App.Theme.FileArea.BackgroundBrush}" />
-				</Grid>
-				""");
-			SetRow(contentBackground, 1); SetRowSpan(contentBackground, 2); Children.Add(contentBackground);
-			var headerBackground = (Grid)XamlReader.Load(
-				"""
-				<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" IsHitTestVisible="False">
-					<Border Background="{ThemeResource App.Theme.Sidebar.BackgroundBrush}" />
-					<Border Background="{ThemeResource App.Theme.FileArea.BackgroundBrush}" />
-				</Grid>
-				""");
-			Children.Add(headerBackground);
+			// No background of its own: Settings already sits on the app's file area, so the panel shows the same background as the rest
+			// of its Settings section.
 			var headerDivider = (Border)XamlReader.Load(
 				"""<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Height="1" VerticalAlignment="Top" Background="{ThemeResource DividerStrokeColorDefaultBrush}" IsHitTestVisible="False" />""");
 			SetRow(headerDivider, 1); SetRowSpan(headerDivider, 2); Children.Add(headerDivider);
@@ -212,6 +205,7 @@ namespace Files.App.ViewModels.UserControls
 			windowActions.VerticalAlignment = VerticalAlignment.Top;
 			SetColumn(windowActions, 1);
 			header.Children.Add(toolbar); header.Children.Add(windowActions);
+			Raised(appearanceChoice);
 			appearanceChoice.Items.Add(Strings.SidebarEditorDefault.GetLocalizedResource());
 			appearanceChoice.Items.Add(Strings.SidebarEditorLegacy.GetLocalizedResource());
 			AutomationProperties.SetName(appearanceChoice, Strings.CustomizationSidebarAppearance.GetLocalizedResource());
@@ -236,7 +230,7 @@ namespace Files.App.ViewModels.UserControls
 			{
 				Content = settingsContent,
 				Width = 400,
-				MaxHeight = 520,
+				MaxHeight = 2000,
 				HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
 				VerticalScrollBarVisibility = ScrollBarVisibility.Auto
 			};
@@ -244,12 +238,14 @@ namespace Files.App.ViewModels.UserControls
 			{
 				Content = settingsScroll,
 				Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft,
+				// The default acrylic background, with the rounded corners of the app's other flyouts.
 				FlyoutPresenterStyle = new Style(typeof(FlyoutPresenter))
 				{
 					Setters =
 					{
 						new Setter(Control.PaddingProperty, new Thickness(0)),
-						new Setter(FrameworkElement.MaxWidthProperty, double.PositiveInfinity)
+						new Setter(FrameworkElement.MaxWidthProperty, double.PositiveInfinity),
+						new Setter(Control.CornerRadiusProperty, new CornerRadius(8))
 					}
 				}
 			};
@@ -257,7 +253,7 @@ namespace Files.App.ViewModels.UserControls
 			{
 				CommitPendingEdits();
 				settingsScroll.Width = Math.Min(400, Math.Max(200, ActualWidth - 48));
-				settingsScroll.MaxHeight = Math.Min(520, Math.Max(160, ActualHeight - dragArea.ActualHeight - 48));
+				settingsScroll.MaxHeight = Math.Max(160, ActualHeight - dragArea.ActualHeight - 48);
 			};
 			toolbar.Children.Add(new DropDownButton
 			{
@@ -342,6 +338,7 @@ namespace Files.App.ViewModels.UserControls
 			requestedPreviewFolders.Clear();
 			owner.PropertyChanged += OwnerChanged;
 			owner.EditorIconsChanged += OwnerIconsChanged;
+			owner.EditorEntriesRenamed += OwnerEntriesRenamed;
 			owner.EditorPanelShown();
 			preview.MenuItemsSource = previewNodes;
 			DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (!hidden) Refresh(true, true); });
@@ -356,6 +353,7 @@ namespace Files.App.ViewModels.UserControls
 			pendingTextCommits.Clear();
 			owner.PropertyChanged -= OwnerChanged;
 			owner.EditorIconsChanged -= OwnerIconsChanged;
+			owner.EditorEntriesRenamed -= OwnerEntriesRenamed;
 			foreach (var list in watchedSidebarLists) list.CollectionChanged -= SidebarListChanged;
 			watchedSidebarLists.Clear();
 			// Clearing the preview's rows detaches them from the sidebar items they show.
@@ -370,6 +368,24 @@ namespace Files.App.ViewModels.UserControls
 			var snapshot = owner.CaptureEditor();
 			if (snapshot != lastRendered && snapshot != localChangeSnapshot) QueueRefresh(true, true);
 		}
+		// The sidebar saved items under new keys by itself (the history already follows them): so do the selection and what this
+		// panel last drew, so that isn't taken for an outside change. The details are rebuilt only when the selected item moved.
+		private void OwnerEntriesRenamed(IReadOnlyList<(string From, string To)> renames)
+		{
+			string Renamed(string key) => renames.Aggregate(key, (current, rename) => string.Equals(current, rename.From, StringComparison.OrdinalIgnoreCase) ? rename.To : current);
+			EditorSnapshot Map(EditorSnapshot snapshot) => snapshot with { Sidebar = SidebarViewModel.RenameEditorEntries(snapshot.Sidebar, renames) };
+			if (lastRendered is { } rendered) lastRendered = Map(rendered);
+			if (localChangeSnapshot is { } local) localChangeSnapshot = Map(local);
+			if (liveBefore is { } live) liveBefore = Map(live);
+			var moved = selectedKey is not null && Renamed(selectedKey) != selectedKey;
+			if (moved)
+			{
+				selectedKey = Renamed(selectedKey!);
+				if (inspectorKey is not null) inspectorKey = Renamed(inspectorKey);
+				renamingTagKey = null;
+			}
+			QueueRefresh(moved);
+		}
 		private void OwnerIconsChanged(object? sender, EventArgs args)
 		{
 			updateGroupIconPreview?.Invoke();
@@ -377,6 +393,7 @@ namespace Files.App.ViewModels.UserControls
 		}
 		private void Change(Action action, bool rebuildInspector = true)
 		{
+			CommitLive();
 			var before = owner.CaptureEditor();
 			changeDepth++;
 			try { action(); }
@@ -394,6 +411,7 @@ namespace Files.App.ViewModels.UserControls
 			if (row.ViewOnly) { ShowPreviewSelection(); return; }
 			if (selectedKey == row.Key && inspectorKey == row.Key && inspector.Children.Count > 0) return;
 			selectedKey = row.Key;
+			renamingTagKey = null;
 			QueueRefresh(true);
 		}
 		private void ShowPreviewSelection()
@@ -443,18 +461,56 @@ namespace Files.App.ViewModels.UserControls
 		private void CommitPendingEdits()
 		{
 			foreach (var commit in pendingTextCommits.ToArray()) commit();
+			CommitLive();
+		}
+		// A live edit: shown at once (preview and sidebar), not yet a step in the history.
+		private void ChangeLive(Action action)
+		{
+			liveBefore ??= owner.CaptureEditor();
+			changeDepth++;
+			try { action(); }
+			finally { changeDepth--; }
+			localChangeSnapshot = owner.CaptureEditor();
+			QueueRefresh(false);
+		}
+		// The live edit becomes one Undo step, back to how things were before it started.
+		private void CommitLive()
+		{
+			if (liveBefore is not { } before) return;
+			liveBefore = null;
+			history.Record(before, owner.CaptureEditor());
+			QueueRefresh(false);
+		}
+		// Escape: the live edit is dropped, and everything is back to how it was before it started. No Undo step.
+		private void CancelLive()
+		{
+			if (liveBefore is not { } before) return;
+			liveBefore = null;
+			changeDepth++;
+			try { owner.RestoreEditor(before); }
+			finally { changeDepth--; }
+			localChangeSnapshot = owner.CaptureEditor();
+			QueueRefresh(true);
 		}
 		private void Restore(bool forward)
 		{
 			CommitPendingEdits();
 			var current = owner.CaptureEditor();
-			EditorSnapshot restored;
-			if (forward ? history.Redo(current, out restored) : history.Undo(current, out restored)) owner.RestoreEditor(restored);
-			QueueRefresh(true, true);
+			var detailsBefore = owner.EditorDetailsState(selectedKey);
+			if (!(forward ? history.Redo(current, out var restored) : history.Undo(current, out restored))) return;
+			// The panel's own change, so the sidebar refreshing after it isn't taken for a change made elsewhere.
+			changeDepth++;
+			try { owner.RestoreEditor(restored); }
+			finally { changeDepth--; }
+			localChangeSnapshot = owner.CaptureEditor();
+			// The details are rebuilt only when what they show changed, so an open Unify Appearance otherwise stays as it is. Options
+			// aren't part of Undo, so they never need rebuilding here.
+			QueueRefresh(restored.Sections != current.Sections || owner.EditorDetailsState(selectedKey) != detailsBefore);
 		}
 		private void Refresh(bool rebuildInspector = true, bool rebuildDefaults = false)
 		{
 			var previousSelection = selectedKey;
+			var waitingForTag = false;
 			var version = ++renderVersion;
 			var offset = preview.VerticalScrollOffset;
 			refreshing = true;
@@ -471,20 +527,24 @@ namespace Files.App.ViewModels.UserControls
 				renderedRows = rows;
 				var shown = RenderPreview();
 				if (selectedKey is null || rows.All(row => row.Key != selectedKey))
-					selectedKey = shown.FirstOrDefault(row => !row.ViewOnly)?.Key;
+				{
+					// A tag renamed in the Tag name box is missing until the sidebar saves it under its new name; the details wait for it.
+					if (selectedKey is not null && selectedKey == renamingTagKey) waitingForTag = true;
+					else selectedKey = shown.FirstOrDefault(row => !row.ViewOnly)?.Key;
+				}
 				ShowPreviewSelection();
 				// After layout (low priority), so the list has measured its new rows and the position isn't cut short.
 				DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
 				{
 					if (!hidden && version == renderVersion && Math.Abs(preview.VerticalScrollOffset - offset) > 0.5) preview.ScrollToVerticalOffset(offset);
 				});
-				undo.IsEnabled = history.CanUndo(owner.CaptureEditor()); redo.IsEnabled = history.CanRedo(owner.CaptureEditor());
+				undo.IsEnabled = liveBefore is not null || history.CanUndo(owner.CaptureEditor()); redo.IsEnabled = history.CanRedo(owner.CaptureEditor());
 				// Reset buttons are greyed out when there is nothing to reset.
 				resetAll.IsEnabled = !owner.IsSidebarEditorDefault();
 				duplicate.IsEnabled = baseRows.FirstOrDefault(candidate => candidate.Key == selectedKey) is { } selected && owner.CanDuplicateEditorRow(selected);
 			}
 			finally { refreshing = false; }
-			if (rebuildInspector || previousSelection != selectedKey) BuildInspector();
+			if (!waitingForTag && (rebuildInspector || previousSelection != selectedKey)) BuildInspector();
 			else if (itemReset is not null && itemResetKey is not null) itemReset.IsEnabled = !owner.IsEditorEntryDefault(itemResetKey);
 			if (rebuildDefaults) BuildDefaults();
 			updateAppearanceApply?.Invoke();
@@ -530,8 +590,9 @@ namespace Files.App.ViewModels.UserControls
 					?? new FlatSidebarItem(item, row.Depth, opacity) { PreviewExpanded = expanded, PreviewAcceptsInside = acceptsInside });
 				shown.Add(row);
 			}
-			// The same gaps as the sidebar: 12 px after an expanded section, and Legacy's 2 px insets at both ends of a section.
+			// The same gaps as the sidebar: the section spacing after an expanded section, and Legacy's 2 px insets at both ends of a section.
 			var legacy = owner.EditorOptions.SidebarAppearance == 1;
+			var sectionGap = owner.EditorOptions.SidebarSectionSpacing;
 			var previousExpanded = false;
 			var legacySection = false;
 			for (int index = 0; index < nodes.Count; index++)
@@ -541,11 +602,11 @@ namespace Files.App.ViewModels.UserControls
 				{
 					node.HasExpandedPredecessor = previousExpanded;
 					previousExpanded = node.Item.Children is null || (shown[index].CanExpand ? node.PreviewExpanded : node.Item.IsExpanded);
-					legacySection = node.Item is ISidebarItemAppearanceModel { SidebarLegacyHeader: true };
+					legacySection = node.Item is ISidebarItemAppearanceModel { SidebarLook.LegacyHeader: true };
 				}
 				var first = legacy && legacySection && node.Depth == 1 && index > 0 && nodes[index - 1].Depth == 0;
 				var last = legacy && legacySection && node.Depth > 0 && (index + 1 == nodes.Count || nodes[index + 1].Depth == 0);
-				node.SetLegacySectionInsets(first, last);
+				node.SetLegacySectionInsets(first, last, sectionGap);
 			}
 			// Bring the shown rows to the new ones with the fewest changes: the unchanged rows at the start and end stay,
 			// rows in between are replaced, and only the difference in length is added or removed.
@@ -653,32 +714,44 @@ namespace Files.App.ViewModels.UserControls
 			owner.RememberEditorSelection(selectedKey);
 			updateAppearanceApply = null;
 			updateGroupIconPreview = null;
+			// Rebuilding the same item keeps the details as tall as they were until the new content is laid out, so the scroll
+			// position doesn't jump.
+			if (offset > 0) inspector.MinHeight = inspector.ActualHeight;
 			inspector.Children.Clear();
 			var row = owner.EditorRows().FirstOrDefault(candidate => candidate.Key == selectedKey);
-			if (row is null) return;
+			if (row is null) { inspector.MinHeight = 0; return; }
 			void Edit(Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry> update) => Change(() => owner.EditSidebarEntry(row.Key, update), false);
-			var heading = new TextBlock { FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-			heading.Inlines.Add(new Run { Text = row.Name });
-			if (row.Entry.SourceKey.Length > 0)
-				heading.Inlines.Add(new Run
+			void EditLive(Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry> update) => ChangeLive(() => owner.EditSidebarEntry(row.Key, update));
+			// The item's own name: a label only changes the name box. A tag's name changes when the tag is renamed; a duplicate shows
+			// the name of what it copies, and groups have only their label.
+			var titleText = row.Decoration || row.OriginalName.Length == 0 ? row.Name : row.OriginalName;
+			var titleStyle = (Style)Application.Current.Resources["SubtitleTextBlockStyle"];
+			var title = new TextBlock { Style = titleStyle, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+			title.Inlines.Add(new Run { Text = titleText });
+			// "Duplicate" and "Currently unavailable" follow the name on its baseline, in normal size and the same darker grey. Each
+			// stays in one piece when the line wraps.
+			void HeadingNote(string resource)
+			{
+				title.Inlines.Add(new Run { Text = "   " });
+				title.Inlines.Add(Themed(new Run
 				{
-					Text = " " + Strings.SidebarEditorDuplicateSuffix.GetLocalizedResource(),
-					Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
-					FontWeight = Microsoft.UI.Text.FontWeights.Normal
-				});
-			inspector.Children.Add(heading);
-			if (!row.Available && !row.Removable && !row.Entry.Hidden)
-				inspector.Children.Add(new TextBlock { Text = Strings.SidebarEditorUnavailable.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 });
+					Text = resource.GetLocalizedResource().Replace(' ', '\u00A0'), FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.Normal
+				}, TextElement.ForegroundProperty, "TextFillColorTertiaryBrush"));
+			}
+			if (row.Entry.SourceKey.Length > 0) HeadingNote(Strings.SidebarEditorDuplicateSuffix);
+			if (!row.Available && !row.Removable && !row.Entry.Hidden || owner.IsEditorMissingTagCopy(row)) HeadingNote(Strings.SidebarEditorUnavailable);
+			// The name alone, measured to decide whether the buttons still fit beside it.
+			var nameProbe = new TextBlock { Text = titleText, Style = titleStyle };
+			// One line: the name on the left; Show in Sidebar, Move up and down, Reset and Remove on the right.
 			var actions = new Grid { ColumnSpacing = 8 };
 			actions.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
 			actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-			var visibility = new StackPanel
-			{
-				VerticalAlignment = VerticalAlignment.Center
-			};
-			Check(visibility, Strings.SidebarEditorVisible, !owner.IsEditorEntryHidden(row.Key), value => Edit(entry => entry with { Hidden = !value }));
-			actions.Children.Add(visibility);
+			actions.Children.Add(title);
 			var moves = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+			var visibility = EyeToggle(Strings.SidebarEditorVisible, !owner.IsEditorEntryHidden(row.Key), value => Edit(entry => entry with { Hidden = !value }), eye: false);
+			visibility.MinHeight = 36;
+			moves.Children.Add(visibility);
+			VerticalSeparator(moves);
 			foreach (var direction in new[] { -1, 1 })
 			{
 				var siblings = owner.EditorRows().Where(candidate => candidate.Parent == row.Parent && !owner.IsEditorSettingsRow(candidate.Key)).ToList();
@@ -704,127 +777,174 @@ namespace Files.App.ViewModels.UserControls
 				moves.Children.Add(remove);
 			}
 			SetColumn(moves, 1); actions.Children.Add(moves); inspector.Children.Add(actions);
+			// When the line is too long, the notes wrap under the name first; the buttons move under the name, as one group, only when
+			// the name and the buttons don't fit either.
+			actions.RowDefinitions.Add(new() { Height = GridLength.Auto });
+			actions.RowDefinitions.Add(new() { Height = GridLength.Auto });
+			actions.SizeChanged += (_, args) =>
+			{
+				var unbounded = new Size(double.PositiveInfinity, double.PositiveInfinity);
+				nameProbe.Measure(unbounded); moves.Measure(unbounded);
+				var buttonsBelow = nameProbe.DesiredSize.Width + actions.ColumnSpacing + moves.DesiredSize.Width > args.NewSize.Width;
+				SetRow(moves, buttonsBelow ? 1 : 0); SetColumn(moves, buttonsBelow ? 0 : 1); Grid.SetColumnSpan(moves, buttonsBelow ? 2 : 1);
+				actions.RowSpacing = buttonsBelow ? 8 : 0;
+			};
 			if (!row.Decoration)
 			{
-				Text(inspector, Strings.SidebarVisualName, row.Name, value => Edit(entry => entry with { Label = value.Trim() }), enabled: row.CanEditName);
-				if (row.Key.StartsWith("sidebar-shortcut:", StringComparison.Ordinal))
-					Text(inspector, Strings.SidebarVisualTarget, row.Entry.Target, value =>
+				// [Icon], then "Label" (a tag's "Tag name") joined to its box, the divider on the same line as every other row's. A tag's
+				// box renames the tag through Files' own tag settings, with a note saying so; a duplicated tag is a sidebar shortcut, so
+				// its box is only a label.
+				var tag = owner.IsEditorTag(row.Key);
+				var labelRow = new Grid { ColumnSpacing = IconGap };
+				labelRow.ColumnDefinitions.Add(new() { Width = new GridLength(IconButtonWidth) });
+				labelRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+				var showIcon = EyeToggle(Strings.SidebarEditorShowIcon, !LegacyHeader(row) && !row.Entry.HideIcon, value => Edit(entry => entry with { HideIcon = !value }));
+				showIcon.IsEnabled = !LegacyHeader(row);
+				showIcon.Width = IconButtonWidth;
+				showIcon.Padding = new Thickness(8, 4, 8, 4);
+				showIcon.VerticalAlignment = VerticalAlignment.Top;
+				ToolTipService.SetToolTip(showIcon, Strings.SidebarEditorIconTooltip.GetLocalizedResource());
+				AutomationProperties.SetHelpText(showIcon, Strings.SidebarEditorIconTooltip.GetLocalizedResource());
+				labelRow.Children.Add(showIcon);
+				var labelHost = new StackPanel { Spacing = 4 };
+				SetColumn(labelHost, 1);
+				if (tag)
+				{
+					labelHost.Children.Add(Labeled(Strings.SidebarEditorTagName, TagNameBox(row), ShortLabelWidth));
+					// Under the box's text.
+					labelHost.Children.Add(new TextBlock
 					{
-						if (!Path.IsPathFullyQualified(value.Trim()) || value.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return;
-						Edit(entry => entry with { Target = value.Trim() });
-					}, enabled: row.Entry.SourceKey.Length == 0);
-				var size = row.Entry.Size == 3 || row.Entry.TextPt > 0 || row.Entry.IconPt > 0 ? 3 : row.Entry.Size is 1 or 2 ? row.Entry.Size : 0;
-				Combo(inspector, Strings.CustomizationSidebarEntrySize,
-					[Strings.SidebarEditorDefault, Strings.SidebarEditorMedium, Strings.SidebarEditorLarge, Strings.SidebarEditorCustom], size, value =>
-				{
-					var current = owner.EditorRows().First(candidate => candidate.Key == row.Key).Entry;
-					var points = DefaultPoints(row, current.Size);
-					Change(() => owner.EditSidebarEntry(row.Key, entry => entry with { Size = value == 0 ? -1 : value,
-						TextPt = value == 3 ? entry.TextPt > 0 ? entry.TextPt : points.Text : 0,
-						IconPt = value == 3 ? entry.IconPt > 0 ? entry.IconPt : points.Icon : 0 }));
-				});
-				if (size == 3)
-				{
-					var points = DefaultPoints(row);
-					var custom = new StackPanel { Spacing = 8 };
-					// Legacy headings show no icon, so only their text size is offered.
-					Sizes(custom, row.Entry.TextPt > 0 ? row.Entry.TextPt : points.Text, row.Entry.IconPt > 0 ? row.Entry.IconPt : points.Icon, row.Entry.SizesLinked, LegacyHeader(row),
-						(field, text, icon) => Edit(entry => field == 0
-							? entry with { TextPt = text, IconPt = entry.SizesLinked ? icon : entry.IconPt }
-							: entry with { IconPt = icon, TextPt = entry.SizesLinked ? text : entry.TextPt }),
-						value => Edit(entry => entry with { SizesLinked = value }));
-					// Shown directly under Size, which already says Custom.
-					inspector.Children.Add(custom);
+						Text = Strings.SidebarEditorTagRenameNote.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7,
+						Margin = new Thickness(ShortLabelWidth + 13, 0, 0, 0)
+					});
 				}
+				else
+					Text(labelHost, Strings.SidebarVisualName, row.Name, value => Edit(entry => entry with { Label = value.Trim() }), enabled: row.CanEditName, labelWidth: ShortLabelWidth);
+				labelRow.Children.Add(labelHost);
+				inspector.Children.Add(labelRow);
+				var size = SizeChoice(row.Entry);
+				Combo(inspector, Strings.CustomizationSidebarEntrySize, SizeChoices, size,
+					value => Change(() => owner.EditSidebarEntry(row.Key, entry => WithSizeChoice(entry, value, DefaultPoints(row, entry.Size)))));
+				// Shown directly under Size, which already says Custom. Legacy headings show no icon, so only their text size is offered.
+				if (size == 3) CustomSizes(inspector, row.Entry, DefaultPoints(row), LegacyHeader(row), EditLive, Edit);
 				// A group's icon comes right after its size.
 				if (row.Key.StartsWith("sidebar-group:", StringComparison.Ordinal)) BuildGroupIconPicker(row);
-				var hideIcon = Check(inspector, Strings.CustomizationSidebarHideIcon, LegacyHeader(row) || row.Entry.HideIcon,
-					value => Edit(entry => entry with { HideIcon = value }));
-				hideIcon.IsEnabled = !LegacyHeader(row);
 				if (owner.EditorOptions.SidebarAppearance == 1 && row.CanHidePin)
 					Check(inspector, Strings.CustomizationSidebarHidePin, row.Entry.HidePin, value => Edit(entry => entry with { HidePin = value }));
 				if (row.CanExpand)
 				{
 					Combo(inspector, Strings.SidebarEditorExpansion, [Strings.SidebarEditorDefault, Strings.CustomizationSidebarAlwaysExpanded, Strings.CustomizationSidebarAlwaysCollapsed],
 						PreviewExpansionMode(row),
-						value => Edit(entry => owner.EditorOptions.SidebarAppearance == 1
-							? entry with { LegacyExpansion = value } : entry with { HideArrow = value == 2, ExpansionLock = value }));
+						// Rebuilds the details: Always collapsed switches off Style inner folders separately.
+						value => Change(() => owner.EditSidebarEntry(row.Key, entry => owner.EditorOptions.SidebarAppearance == 1
+							? entry with { LegacyExpansion = value } : entry with { HideArrow = value == 2, ExpansionLock = value })));
 				}
 				Separator(inspector);
 				var appearanceBody = new StackPanel { Spacing = 12, Padding = new Thickness(16, 12, 16, 12) };
-				var headingText = new StackPanel { Spacing = 6, Margin = new Thickness(0, 12, 0, 12) };
-				headingText.Children.Add(new TextBlock
+				// Where to apply (a two-part switch, the chosen scope described under it) and what to copy (toggle chips), then Undo
+				// changes and Apply. Every row in the scope takes the copied settings it can use.
+				TextBlock UnifyLabel(string resource) => Themed(new TextBlock
 				{
-					Text = Strings.SidebarEditorApplyAppearance.GetLocalizedResource(),
-					Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-					TextWrapping = TextWrapping.Wrap
-				});
-				headingText.Children.Add(new TextBlock
+					Text = resource.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6)
+				}, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+				// Entire sidebar (3), or Customize (4): only the sections chosen with the chips below the switch.
+				var scopeValues = new[] { 3, 4 };
+				// No note under Entire sidebar.
+				var scopeHints = new[] { null, Strings.SidebarEditorScopeCustomHint };
+				var scopeSwitch = new Segmented { HorizontalAlignment = HorizontalAlignment.Stretch };
+				scopeSwitch.Items.Add(new SegmentedItem { Content = Strings.CustomizationSidebarScopeAll.GetLocalizedResource() });
+				scopeSwitch.Items.Add(new SegmentedItem { Content = Strings.CustomizationSidebarScopeCustom.GetLocalizedResource() });
+				scopeSwitch.SelectedIndex = Math.Max(0, Array.IndexOf(scopeValues, appearanceScope));
+				AutomationProperties.SetName(scopeSwitch, Strings.SidebarEditorApplyTo.GetLocalizedResource());
+				var scopeHint = Themed(new TextBlock
 				{
-					Text = Strings.SidebarEditorUnifiedDescription.GetLocalizedResource(),
-					Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-					Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-					TextWrapping = TextWrapping.Wrap
-				});
-				var choices = new RadioButtons
+					Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0)
+				}, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+				var scopePanel = new StackPanel();
+				scopePanel.Children.Add(UnifyLabel(Strings.SidebarEditorApplyTo));
+				scopePanel.Children.Add(scopeSwitch);
+				scopePanel.Children.Add(scopeHint);
+				// Customize: a chip for each top-level row (a section with its contents, or a single item such as Home). The first
+				// time, the row holding the source item is chosen.
+				var sectionChips = new CommunityToolkit.WinUI.Controls.WrapPanel { HorizontalSpacing = 8, VerticalSpacing = 8, Margin = new Thickness(0, 8, 0, 0) };
+				var chosenSections = owner.EditorUnifySections;
+				if (chosenSections.Count == 0) chosenSections.Add(owner.EditorTopLevelKey(row.Key));
+				void SectionChip(string key, string label)
 				{
-					Header = Strings.SidebarEditorApplyTo.GetLocalizedResource(),
-					MaxColumns = 1, HorizontalAlignment = HorizontalAlignment.Stretch
-				};
-				foreach (var resource in new[] { Strings.CustomizationSidebarScopeGroup, Strings.CustomizationSidebarScopeAll })
-					choices.Items.Add(new RadioButton
-					{
-						Content = new TextBlock { Text = resource.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
-						HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch
-					});
-				choices.SelectedIndex = appearanceScope - 2;
-				AutomationProperties.SetName(choices, Strings.SidebarEditorApplyTo.GetLocalizedResource());
+					var chip = new ToggleButton { Content = label, IsChecked = chosenSections.Contains(key) };
+					chip.Checked += (_, _) => { chosenSections.Add(key); updateAppearanceApply?.Invoke(); };
+					chip.Unchecked += (_, _) => { chosenSections.Remove(key); updateAppearanceApply?.Invoke(); };
+					sectionChips.Children.Add(chip);
+				}
+				foreach (var topLevel in owner.EditorTopLevelRows())
+					SectionChip(topLevel.Key, topLevel.Name);
+				scopePanel.Children.Add(sectionChips);
+				appearanceBody.Children.Add(scopePanel);
+
+				// What is copied; kept by the sidebar for every item and panel.
+				var chips = new CommunityToolkit.WinUI.Controls.WrapPanel { HorizontalSpacing = 8, VerticalSpacing = 8 };
+				void UnifyChip(string resource, bool value, Func<UnifyChoice, bool, UnifyChoice> update)
+				{
+					var chip = new ToggleButton { Content = resource.GetLocalizedResource(), IsChecked = value };
+					chip.Checked += (_, _) => { owner.EditorUnify = update(owner.EditorUnify, true); updateAppearanceApply?.Invoke(); };
+					chip.Unchecked += (_, _) => { owner.EditorUnify = update(owner.EditorUnify, false); updateAppearanceApply?.Invoke(); };
+					chips.Children.Add(chip);
+				}
+				var unify = owner.EditorUnify;
+				UnifyChip(Strings.CustomizationSidebarEntrySize, unify.Size, (choice, isOn) => choice with { Size = isOn });
+				UnifyChip(Strings.SidebarEditorUnifyIcon, unify.Icon, (choice, isOn) => choice with { Icon = isOn });
+				UnifyChip(Strings.SidebarEditorUnifyArrow, unify.Arrow, (choice, isOn) => choice with { Arrow = isOn });
+				// Pins are shown only in the Legacy layout.
+				if (owner.EditorOptions.SidebarAppearance == 1)
+					UnifyChip(Strings.SidebarEditorUnifyPin, unify.Pin, (choice, isOn) => choice with { Pin = isOn });
+				var copyPanel = new StackPanel();
+				copyPanel.Children.Add(UnifyLabel(Strings.SidebarEditorUnifyCopy));
+				copyPanel.Children.Add(chips);
+				appearanceBody.Children.Add(copyPanel);
+
 				var apply = new Button
 				{
 					Content = Strings.SidebarEditorApply.GetLocalizedResource(),
 					Style = (Style)Application.Current.Resources["AccentButtonStyle"],
-					MinWidth = 96, HorizontalAlignment = HorizontalAlignment.Right
+					MinWidth = 96
 				};
-				var undoAppearance = new Button
-				{
-					Content = Strings.SidebarEditorUndoAppearance.GetLocalizedResource(),
-					IsEnabled = false, MinWidth = 96
-				};
+				// The panel's own Undo reverses an Apply.
 				updateAppearanceApply = () =>
 				{
 					apply.IsEnabled = owner.CanApplyEditorAppearance(row.Key, appearanceScope);
-					// Always beside Apply; available once an Apply here can be undone.
-					undoAppearance.IsEnabled = CanUndoAppliedAppearance(row.Key);
+					var hint = scopeHints[Math.Max(0, Array.IndexOf(scopeValues, appearanceScope))];
+					scopeHint.Text = hint?.GetLocalizedResource() ?? string.Empty;
+					scopeHint.Visibility = hint is null ? Visibility.Collapsed : Visibility.Visible;
+					sectionChips.Visibility = appearanceScope == 4 ? Visibility.Visible : Visibility.Collapsed;
 				};
-				choices.SelectionChanged += (_, _) =>
+				scopeSwitch.SelectionChanged += (_, _) =>
 				{
-					if (choices.SelectedIndex < 0) return;
-					appearanceScope = choices.SelectedIndex + 2;
+					if (scopeSwitch.SelectedIndex < 0) return;
+					appearanceScope = scopeValues[scopeSwitch.SelectedIndex];
 					updateAppearanceApply?.Invoke();
 				};
 				apply.Click += (_, _) => ApplyAppearance(row.Key);
-				undoAppearance.Click += (_, _) => UndoAppliedAppearance(row.Key);
-				appearanceBody.Children.Add(choices);
-				var appearanceLayout = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+				// The open part in the header's colour (see HeaderColoured).
+				var appearanceLayout = Themed(new Grid { HorizontalAlignment = HorizontalAlignment.Stretch }, Panel.BackgroundProperty, HeaderColour);
 				appearanceLayout.RowDefinitions.Add(new() { Height = GridLength.Auto });
 				appearanceLayout.RowDefinitions.Add(new() { Height = GridLength.Auto });
 				appearanceLayout.Children.Add(appearanceBody);
 				var footerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-				footerActions.Children.Add(undoAppearance); footerActions.Children.Add(apply);
-				var footer = new Border
+				footerActions.Children.Add(apply);
+				var footer = Themed(new Border
 				{
-					BorderThickness = new Thickness(0, 1, 0, 0),
-					BorderBrush = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
-					Padding = new Thickness(16), Child = footerActions
-				};
+					BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(16), Child = footerActions
+				}, Border.BorderBrushProperty, "DividerStrokeColorDefaultBrush");
 				SetRow(footer, 1); appearanceLayout.Children.Add(footer);
-				var appearance = new Expander
+				// The app's own settings expander, so its name and note look like every other setting's (and like the inner folders' card).
+				var appearance = new SettingsExpander
 				{
-					Header = headingText, Content = appearanceLayout, IsExpanded = appearanceExpanded, Padding = new Thickness(0),
-					HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch
+					Header = Strings.SidebarEditorApplyAppearance.GetLocalizedResource(), Description = Strings.SidebarEditorUnifiedDescription.GetLocalizedResource(),
+					ItemsFooter = appearanceLayout, IsExpanded = appearanceExpanded, HorizontalAlignment = HorizontalAlignment.Stretch
 				};
-				appearance.Expanding += (_, _) => appearanceExpanded = true;
-				appearance.Collapsed += (_, _) => appearanceExpanded = false;
+				HeaderColoured(appearance);
+				Raised(appearance);
+				appearance.RegisterPropertyChangedCallback(SettingsExpander.IsExpandedProperty, (_, _) => appearanceExpanded = appearance.IsExpanded);
 				inspector.Children.Add(appearance);
 				updateAppearanceApply.Invoke();
 				if (CanStyleEditorFolders(row))
@@ -832,31 +952,20 @@ namespace Files.App.ViewModels.UserControls
 			}
 			else
 			{
-				Number(inspector, Strings.CustomizationSidebarGapSize, row.Entry.Gap, 4, 64, value => Edit(entry => entry with { Gap = (int)value }));
+				Number(inspector, Strings.CustomizationSidebarGapSize, row.Entry.Gap, 4, 64, value => EditLive(entry => entry with { Gap = (int)value }));
 			}
 			var key = selectedKey;
-			DispatcherQueue.TryEnqueue(() => { if (!hidden && key == inspectorKey && version == inspectorVersion) details.ChangeView(null, offset, null, true); });
+			DispatcherQueue.TryEnqueue(() =>
+			{
+				if (!hidden && key == inspectorKey && version == inspectorVersion) details.ChangeView(null, offset, null, true);
+				inspector.MinHeight = 0;
+			});
 		}
-
-		private bool CanUndoAppliedAppearance(string key) => appearanceUndo is { } applied && applied.Key == key &&
-			applied.After == owner.CaptureEditor() && history.CanUndo(applied.After);
 
 		private void ApplyAppearance(string key)
 		{
 			CommitPendingEdits();
-			var before = owner.CaptureEditor();
 			Change(() => owner.ApplyEditorAppearance(key, appearanceScope), false);
-			var after = owner.CaptureEditor();
-			if (before != after) appearanceUndo = (key, after);
-			updateAppearanceApply?.Invoke();
-		}
-
-		private void UndoAppliedAppearance(string key)
-		{
-			CommitPendingEdits();
-			if (!CanUndoAppliedAppearance(key)) return;
-			appearanceUndo = null;
-			Restore(false);
 			updateAppearanceApply?.Invoke();
 		}
 
@@ -873,7 +982,8 @@ namespace Files.App.ViewModels.UserControls
 			var layout = new Grid { ColumnSpacing = 8 };
 			layout.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
 			layout.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-			var icons = new ComboBox { Header = Strings.Icon.GetLocalizedResource(), HorizontalAlignment = HorizontalAlignment.Stretch };
+			var icons = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+			AutomationProperties.SetName(icons, Strings.Icon.GetLocalizedResource());
 			icons.Items.Add(new ComboBoxItem { Content = Strings.SidebarEditorDefault.GetLocalizedResource(), Tag = "" });
 			var selected = 0;
 			foreach (var option in EditorGroupIcons)
@@ -934,14 +1044,11 @@ namespace Files.App.ViewModels.UserControls
 					};
 					var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 					delete.Resources["ButtonBackground"] = transparent;
-					delete.Resources["ButtonBackgroundPointerOver"] = Application.Current.Resources["SubtleFillColorSecondaryBrush"];
-					delete.Resources["ButtonBackgroundPressed"] = Application.Current.Resources["SubtleFillColorTertiaryBrush"];
 					delete.Resources["ButtonBorderBrush"] = transparent;
 					delete.Resources["ButtonBorderBrushPointerOver"] = transparent;
 					delete.Resources["ButtonBorderBrushPressed"] = transparent;
-					delete.Resources["ButtonForeground"] = Application.Current.Resources["TextFillColorSecondaryBrush"];
-					delete.Resources["ButtonForegroundPointerOver"] = Application.Current.Resources["TextFillColorPrimaryBrush"];
-					delete.Resources["ButtonForegroundPressed"] = Application.Current.Resources["TextFillColorSecondaryBrush"];
+					// Secondary text colour until hovered, following Files' theme.
+					Themed(delete, Control.ForegroundProperty, "TextFillColorSecondaryBrush");
 					var deleteLabel = Strings.SidebarEditorDeleteIcon.GetLocalizedResource();
 					AutomationProperties.SetName(delete, deleteLabel);
 					ToolTipService.SetToolTip(delete, deleteLabel);
@@ -976,7 +1083,7 @@ namespace Files.App.ViewModels.UserControls
 				if (icons.SelectedItem is ComboBoxItem { Tag: string source } && source != row.Entry.IconSource)
 					Change(() => owner.EditSidebarEntry(row.Key, entry => entry with { IconSource = source }));
 			};
-			var browse = new Button { Content = Strings.Browse.GetLocalizedResource(), VerticalAlignment = VerticalAlignment.Bottom };
+			var browse = new Button { Content = Strings.Browse.GetLocalizedResource(), VerticalAlignment = VerticalAlignment.Center };
 			var error = new TextBlock { Text = Strings.SidebarEditorIconError.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
 			browse.Click += async (_, _) =>
 			{
@@ -1002,7 +1109,7 @@ namespace Files.App.ViewModels.UserControls
 				icons.IsEnabled = false;
 				browse.IsEnabled = false;
 			}
-			SetColumn(browse, 1); layout.Children.Add(icons); layout.Children.Add(browse);
+			SetColumn(browse, 1); layout.Children.Add(Labeled(Strings.Icon, icons)); layout.Children.Add(Raised(browse));
 			inspector.Children.Add(layout); inspector.Children.Add(error);
 		}
 		private async void LoadIconPreview(Image thumbnail, string path)
@@ -1020,180 +1127,241 @@ namespace Files.App.ViewModels.UserControls
 			var separate = owner.HasEditorFolderAppearance(row.Key);
 			var entry = owner.EditorFolderEntry(row.Key);
 			void Edit(Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry> update) => Change(() => owner.EditSidebarEntry(folderKey, update), false);
-			(double Text, double Icon) Points(int size) => SidebarCustomizationStyle.DefaultPoints(size, false, owner.EditorOptions);
+			void EditLive(Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry> update) => ChangeLive(() => owner.EditSidebarEntry(folderKey, update));
+			(double Text, double Icon) Points(int size) => SidebarCustomizationStyle.DefaultPoints(size, owner.EditorOptions);
 
+			// An item that is always collapsed never shows its inner folders: the switch shows off and is greyed out.
+			var alwaysCollapsed = PreviewExpansionMode(row) == 2;
+			var active = separate && !alwaysCollapsed;
 			var toggle = new ToggleSwitch
 			{
-				IsOn = separate
+				IsOn = active,
+				IsEnabled = !alwaysCollapsed
 			};
 			AutomationProperties.SetName(toggle, Strings.SidebarEditorFolderAppearance.GetLocalizedResource());
+			if (alwaysCollapsed) AutomationProperties.SetHelpText(toggle, Strings.SidebarEditorFolderCollapsedNote.GetLocalizedResource());
 			toggle.Toggled += (_, _) =>
 			{
 				if (toggle.IsOn != owner.HasEditorFolderAppearance(row.Key))
 					Change(() => owner.SetEditorFolderAppearance(row.Key, toggle.IsOn));
 			};
-			inspector.Children.Add(new SettingsCard
-			{
-				Header = new TextBlock
-				{
-					Text = Strings.SidebarEditorFolderAppearance.GetLocalizedResource(),
-					Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-					TextWrapping = TextWrapping.Wrap
-				},
-				Description = Strings.SidebarEditorFolderAppearanceDescription.GetLocalizedResource(),
-				Content = toggle,
-				HorizontalAlignment = HorizontalAlignment.Stretch
-			});
-			if (!separate)
-				return;
-
-			var size = entry.Size == 3 || entry.TextPt > 0 || entry.IconPt > 0 ? 3 : entry.Size is 1 or 2 ? entry.Size : 0;
-			// Size and Hide icons share one row; the checkbox lines up with the size box rather than its header.
-			var sizeRow = new Grid
-			{
-				ColumnSpacing = 16
-			};
+			// The same Icon button and Size box as the item's, inside the card and greyed out while it is off.
+			var body = new StackPanel { Spacing = 8, Padding = new Thickness(16, 12, 16, 12) };
+			var size = SizeChoice(entry);
+			// Wider than the item's Icon button, which fits the text "Icon" but not "Icons"; the divider stays where it was.
+			const double folderIconWidth = IconButtonWidth + 14;
+			var sizeRow = new Grid { ColumnSpacing = IconGap };
+			sizeRow.ColumnDefinitions.Add(new() { Width = new GridLength(folderIconWidth) });
 			sizeRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-			sizeRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-			var sizeHost = new StackPanel();
-			var iconHost = new StackPanel
+			var icons = EyeToggle(Strings.SidebarEditorFolderShowIcons, !entry.HideIcon, value => Edit(current => current with { HideIcon = !value }));
+			icons.Width = folderIconWidth;
+			icons.Padding = new Thickness(8, 4, 8, 4);
+			ToolTipService.SetToolTip(icons, Strings.SidebarEditorFolderIconTooltip.GetLocalizedResource());
+			AutomationProperties.SetHelpText(icons, Strings.SidebarEditorFolderIconTooltip.GetLocalizedResource());
+			sizeRow.Children.Add(icons);
+			var sizeHost = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+			SetColumn(sizeHost, 1); sizeRow.Children.Add(sizeHost);
+			Combo(sizeHost, Strings.CustomizationSidebarEntrySize, SizeChoices, size,
+				value => Change(() => owner.EditSidebarEntry(folderKey, current => WithSizeChoice(current, value, Points(current.Size)))),
+				LabelColumnWidth - folderIconWidth - IconGap);
+			body.Children.Add(sizeRow);
+			if (size == 3) CustomSizes(body, entry, Points(entry.Size), false, EditLive, Edit);
+			// The app's own settings expander, like Unify Appearance, with its switch on the right.
+			var folders = new SettingsExpander
 			{
-				VerticalAlignment = VerticalAlignment.Bottom
+				Header = Strings.SidebarEditorFolderAppearance.GetLocalizedResource(),
+				// While the item is always collapsed, a second line says why the switch is off.
+				Description = alwaysCollapsed
+					? new StackPanel
+					{
+						Children =
+						{
+							new TextBlock { Text = Strings.SidebarEditorFolderAppearanceDescription.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
+							new TextBlock { Text = Strings.SidebarEditorFolderCollapsedNote.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap }
+						}
+					}
+					: Strings.SidebarEditorFolderAppearanceDescription.GetLocalizedResource(),
+				Content = toggle, IsExpanded = foldersExpanded,
+				// A StackPanel can't be disabled, so a ContentControl around it turns everything inside off and greys it out.
+				// In the header's colour, which stays full while the settings inside are greyed out.
+				ItemsFooter = Themed(new Border
+				{
+					Child = new ContentControl
+					{
+						Content = body, IsEnabled = active, Opacity = active ? 1 : 0.5,
+						HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch
+					}
+				}, Border.BackgroundProperty, HeaderColour), HorizontalAlignment = HorizontalAlignment.Stretch
 			};
-			SetColumn(iconHost, 1);
-			sizeRow.Children.Add(sizeHost);
-			sizeRow.Children.Add(iconHost);
-			inspector.Children.Add(sizeRow);
-			Check(iconHost, Strings.SidebarEditorFolderHideIcons, entry.HideIcon, value => Edit(current => current with { HideIcon = value }));
-			Combo(sizeHost, Strings.CustomizationSidebarEntrySize,
-				[Strings.SidebarEditorDefault, Strings.SidebarEditorMedium, Strings.SidebarEditorLarge, Strings.SidebarEditorCustom], size, value =>
-			{
-				var points = Points(owner.EditorFolderEntry(row.Key).Size);
-				Change(() => owner.EditSidebarEntry(folderKey, current => current with
-				{
-					Size = value == 0 ? -1 : value,
-					TextPt = value == 3 ? current.TextPt > 0 ? current.TextPt : points.Text : 0,
-					IconPt = value == 3 ? current.IconPt > 0 ? current.IconPt : points.Icon : 0
-				}));
-			});
-			if (size == 3)
-			{
-				var points = Points(entry.Size);
-				var custom = new StackPanel
-				{
-					Spacing = 8
-				};
-				Sizes(custom, entry.TextPt > 0 ? entry.TextPt : points.Text, entry.IconPt > 0 ? entry.IconPt : points.Icon, entry.SizesLinked, false,
-					(field, text, icon) => Edit(current => field == 0
-						? current with { TextPt = text, IconPt = current.SizesLinked ? icon : current.IconPt }
-						: current with { IconPt = icon, TextPt = current.SizesLinked ? text : current.TextPt }),
-					value => Edit(current => current with { SizesLinked = value }));
-				inspector.Children.Add(custom);
-			}
+			HeaderColoured(folders);
+			Raised(folders);
+			folders.RegisterPropertyChangedCallback(SettingsExpander.IsExpandedProperty, (_, _) => foldersExpanded = folders.IsExpanded);
+			inspector.Children.Add(folders);
 		}
 
+		[DynamicWindowsRuntimeCast(typeof(Brush))]
 		private void BuildDefaults()
 		{
 			defaults.Children.Clear(); var options = owner.EditorOptions;
 			void Save(Func<CustomizationPreferences, CustomizationPreferences> update) => Change(() => owner.SaveEditorOptions(update(owner.EditorOptions)), false);
 			Separator(defaults);
-			var dragEnabled = Check(defaults, Strings.CustomizationSidebarDragEnabled, options.SidebarDragEnabled,
-				value => Save(current => current with { SidebarDragEnabled = value }));
-			dragEnabled.Content = new StackPanel
+			// Spacing: the gap between row highlights (the 4 px built in plus the setting), and the gap before a section that follows
+			// an expanded one. Each row is its name, an info icon with the default, and a - value + stepper.
+			defaults.Children.Add(new TextBlock { Text = Strings.SidebarEditorSpacing.GetLocalizedResource(), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+			// setter, when given, receives a way to show another value without saving it.
+			Grid SpacingRow(StackPanel host, string resource, int value, int minimum, int maximum, int fallback, Func<CustomizationPreferences, int, CustomizationPreferences> save,
+				Action<Action<int>>? setter = null)
 			{
-				Spacing = 2,
-				Children =
+				var label = resource.GetLocalizedResource();
+				var defaultText = string.Format(Strings.SidebarEditorSpacingDefault.GetLocalizedResource(), fallback);
+				// The default, as a small outlined tag beside the name.
+				var tag = Themed(new Border
 				{
-					new TextBlock { Text = Strings.CustomizationSidebarDragEnabled.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
-					new TextBlock { Text = Strings.CustomizationSidebarDragEnabledNotes.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7 }
-				}
-			};
-			AutomationProperties.SetName(dragEnabled, Strings.CustomizationSidebarDragEnabled.GetLocalizedResource());
-			AutomationProperties.SetHelpText(dragEnabled, Strings.CustomizationSidebarDragEnabledNotes.GetLocalizedResource());
-			var sharpIcons = Check(defaults, Strings.CustomizationSidebarSharpIcons, options.SharpLargeIcons,
-				value => Save(current => current with { SharpLargeIcons = value }));
-			sharpIcons.Content = new StackPanel
-			{
-				Spacing = 2,
-				Children =
+					BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 2), VerticalAlignment = VerticalAlignment.Center,
+					Child = Themed(new TextBlock { Text = defaultText, FontSize = 12 }, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush")
+				}, Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush");
+				// One outlined control: - | value | +, with thin dividers, the value centred.
+				var number = new TextBlock { Text = value.ToString(), HorizontalAlignment = HorizontalAlignment.Center,
+					VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+				AutomationProperties.SetName(number, label); AutomationProperties.SetHelpText(number, defaultText);
+				// Held down, a button keeps stepping: after 0.4 s, every 60 ms.
+				RepeatButton Step(string glyph, string name, CornerRadius corners)
 				{
-					new TextBlock { Text = Strings.CustomizationSidebarSharpIcons.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
-					new TextBlock { Text = Strings.CustomizationSidebarSharpIconsNotes.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7 }
+					var button = new RepeatButton
+					{
+						Delay = 400, Interval = 60,
+						Content = new FontIcon { Glyph = glyph, FontSize = 12 }, Width = 36, Height = 32, Padding = new Thickness(0),
+						BorderThickness = new Thickness(0), CornerRadius = corners, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+						HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
+					};
+					var text = name.GetLocalizedResource(); AutomationProperties.SetName(button, text + " " + label); ToolTipService.SetToolTip(button, text);
+					return button;
 				}
-			};
-			AutomationProperties.SetName(sharpIcons, Strings.CustomizationSidebarSharpIcons.GetLocalizedResource());
-			AutomationProperties.SetHelpText(sharpIcons, Strings.CustomizationSidebarSharpIconsNotes.GetLocalizedResource());
-			var keepText = Check(defaults, Strings.CustomizationSidebarKeepTextPosition, options.SidebarKeepTextPosition,
-				value => Save(current => current with { SidebarKeepTextPosition = value }));
-			keepText.Content = new StackPanel
-			{
-				Spacing = 2,
-				Children =
+				var decrease = Step("\uE738", Strings.SidebarEditorDecrease, new CornerRadius(3, 0, 0, 3));
+				var increase = Step("\uE710", Strings.SidebarEditorIncrease, new CornerRadius(0, 3, 3, 0));
+				void Show() { number.Text = value.ToString(); decrease.IsEnabled = value > minimum; increase.IsEnabled = value < maximum; }
+				setter?.Invoke(next => { value = Math.Clamp(next, minimum, maximum); Show(); });
+				void StepBy(int direction)
 				{
-					new TextBlock { Text = Strings.CustomizationSidebarKeepTextPosition.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
-					new TextBlock { Text = Strings.CustomizationSidebarKeepTextPositionNotes.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7 }
+					var next = Math.Clamp(value + direction, minimum, maximum);
+					if (next == value) return;
+					value = next; Show();
+					Save(current => save(current, next));
 				}
-			};
-			AutomationProperties.SetName(keepText, Strings.CustomizationSidebarKeepTextPosition.GetLocalizedResource());
-			AutomationProperties.SetHelpText(keepText, Strings.CustomizationSidebarKeepTextPositionNotes.GetLocalizedResource());
+				decrease.Click += (_, _) => StepBy(-1);
+				increase.Click += (_, _) => StepBy(1);
+				Show();
+				var stepper = new Grid { Height = 32 };
+				foreach (var width in new[] { 36d, 1, 56, 1, 36 }) stepper.ColumnDefinitions.Add(new() { Width = new GridLength(width) });
+				Border Divider(int column) { var line = Themed(new Border(), Border.BackgroundProperty, "ControlStrokeColorDefaultBrush"); SetColumn(line, column); return line; }
+				SetColumn(number, 2); SetColumn(increase, 4);
+				stepper.Children.Add(decrease); stepper.Children.Add(Divider(1)); stepper.Children.Add(number); stepper.Children.Add(Divider(3)); stepper.Children.Add(increase);
+				var outline = Raised(Themed(Themed(new Border
+				{
+					BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Center, Child = stepper
+				}, Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush"), Border.BackgroundProperty, "ControlFillColorDefaultBrush"));
+				var row = new Grid { ColumnSpacing = 8 };
+				row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+				row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+				row.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center,
+					Children = { new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center }, tag } });
+				SetColumn(outline, 1); row.Children.Add(outline);
+				host.Children.Add(row);
+				return row;
+			}
+			SpacingRow(defaults, Strings.SidebarEditorSpacingSections, options.SidebarSectionSpacing, 0, SidebarCustomizationStyle.MaxSectionSpacing,
+				SidebarCustomizationStyle.DefaultSectionSpacing, (current, value) => current with { SidebarSectionSpacing = value });
+			SpacingRow(defaults, Strings.SidebarEditorSpacingItems, EditorBaseRowGap + options.SidebarItemSpacing,
+				EditorBaseRowGap + SidebarCustomizationStyle.MinItemSpacing, EditorBaseRowGap + SidebarCustomizationStyle.MaxItemSpacing, EditorBaseRowGap,
+				(current, value) => current with { SidebarItemSpacing = value - EditorBaseRowGap });
 			Separator(defaults);
-			defaults.Children.Add(new TextBlock
+			var checkboxSettings = new StackPanel { Spacing = 6 };
+			defaults.Children.Add(checkboxSettings);
+			void CheckSetting(string resource, string notes, bool value, Action<bool> save)
+			{
+				var setting = new StackPanel();
+				var control = Check(setting, resource, value, save);
+				var note = new TextBlock
+				{
+					Text = notes.GetLocalizedResource(),
+					TextWrapping = TextWrapping.Wrap,
+					FontSize = 12,
+					Opacity = 0.7,
+					Margin = new Thickness(28, -4, 0, 0)
+				};
+				note.Tapped += (_, args) =>
+				{
+					if (!control.IsEnabled) return;
+					control.Focus(FocusState.Pointer);
+					control.IsChecked = control.IsChecked != true;
+					args.Handled = true;
+				};
+				setting.Children.Add(note);
+				AutomationProperties.SetName(control, resource.GetLocalizedResource());
+				AutomationProperties.SetHelpText(control, notes.GetLocalizedResource());
+				checkboxSettings.Children.Add(setting);
+			}
+			CheckSetting(Strings.CustomizationSidebarDragEnabled, Strings.CustomizationSidebarDragEnabledNotes, options.SidebarDragEnabled,
+				value => Save(current => current with { SidebarDragEnabled = value }));
+			CheckSetting(Strings.CustomizationSidebarSharpIcons, Strings.CustomizationSidebarSharpIconsNotes, options.SharpLargeIcons,
+				value => Save(current => current with { SharpLargeIcons = value }));
+			CheckSetting(Strings.CustomizationSidebarKeepTextPosition, Strings.CustomizationSidebarKeepTextPositionNotes, options.SidebarKeepTextPosition,
+				value => Save(current => current with { SidebarKeepTextPosition = value }));
+			// A lighter panel sets Compact mode apart from the settings above.
+			var compact = new StackPanel { Spacing = 6 };
+			compact.Children.Add(new TextBlock
 			{
 				Text = Strings.SidebarEditorCompactMode.GetLocalizedResource(),
 				FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
 			});
-			Check(defaults, Strings.CustomizationSidebarCompactShowIcons, options.SidebarCompactShowIcons,
+			Check(compact, Strings.CustomizationSidebarCompactShowIcons, options.SidebarCompactShowIcons,
 				value => Save(current => current with { SidebarCompactShowIcons = value }));
-			Check(defaults, Strings.CustomizationSidebarCompactGroupContents, options.SidebarCompactGroupContents,
+			Check(compact, Strings.CustomizationSidebarCompactGroupContents, options.SidebarCompactGroupContents,
 				value => Save(current => current with { SidebarCompactGroupContents = value }));
-			Check(defaults, Strings.SidebarEditorCompactHideGroupIcons, options.SidebarCompactHideGroupIcons,
+			Check(compact, Strings.SidebarEditorCompactHideGroupIcons, options.SidebarCompactHideGroupIcons,
 				value => Save(current => current with { SidebarCompactHideGroupIcons = value }));
-			var sizing = new Grid { ColumnSpacing = 8 };
-			sizing.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-			sizing.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-			var sizeChoice = new ComboBox { MinWidth = 140, HorizontalAlignment = HorizontalAlignment.Stretch };
+			SpacingRow(compact, Strings.SidebarEditorCompactSpacing, EditorBaseRowGap + options.SidebarCompactItemSpacing,
+				EditorBaseRowGap + SidebarCustomizationStyle.MinItemSpacing, EditorBaseRowGap + SidebarCustomizationStyle.MaxItemSpacing, EditorBaseRowGap,
+				(current, value) => current with { SidebarCompactItemSpacing = value - EditorBaseRowGap });
+			// As wide as the Spacing stepper above and flush with its right edge. Custom adds a row under it with the same stepper as
+			// Spacing (8 to 32 px), shown only while Custom is chosen.
+			var sizeChoice = Raised(new ComboBox { Width = 132, HorizontalAlignment = HorizontalAlignment.Right });
 			foreach (var resource in new[] { Strings.CustomizationSidebarCompactOriginalSize, Strings.CustomizationSidebarCompactLargestSize, Strings.SidebarEditorCustom })
 				sizeChoice.Items.Add(resource.GetLocalizedResource());
 			sizeChoice.SelectedIndex = options.SidebarCompactIconMode;
 			AutomationProperties.SetName(sizeChoice, Strings.CustomizationSidebarCompactIconSize.GetLocalizedResource());
-			var customSize = new NumberBox
-			{
-				Value = options.SidebarCompactIconSize,
-				Minimum = 8,
-				Maximum = 32,
-				Width = 100,
-				SmallChange = 1,
-				SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
-			};
-			AutomationProperties.SetName(customSize, Strings.SidebarEditorCompactCustomSize.GetLocalizedResource());
-			ToolTipService.SetToolTip(customSize, Strings.SidebarEditorCompactCustomSize.GetLocalizedResource());
-			var custom = new StackPanel
-			{
-				Orientation = Orientation.Horizontal,
-				Spacing = 4,
-				Visibility = options.SidebarCompactIconMode == 2 ? Visibility.Visible : Visibility.Collapsed
-			};
-			custom.Children.Add(customSize);
-			custom.Children.Add(new TextBlock { Text = Strings.SidebarEditorPixels.GetLocalizedResource(), VerticalAlignment = VerticalAlignment.Center });
-			SetColumn(custom, 1);
-			sizing.Children.Add(sizeChoice); sizing.Children.Add(custom);
+			compact.Children.Add(SettingRow(Strings.CustomizationSidebarCompactIconSize, sizeChoice));
+			// The size each choice draws: Original (16 px) is the custom row's default, Largest is 24 px.
+			int ShownPixels(int mode) => (options with { SidebarCompactIconMode = mode }).CompactIconPixels;
+			Action<int>? showCustomSize = null;
+			var customSize = SpacingRow(compact, Strings.SidebarEditorCompactCustomSize, Math.Clamp(options.SidebarCompactIconSize, 8, 32), 8, 32, ShownPixels(0),
+				(current, value) => current with { SidebarCompactIconSize = value, SidebarCompactIconSizeChosen = true }, setter => showCustomSize = setter);
+			customSize.Visibility = options.SidebarCompactIconMode == 2 ? Visibility.Visible : Visibility.Collapsed;
 			sizeChoice.SelectionChanged += (_, _) =>
 			{
 				if (sizeChoice.SelectedIndex < 0) return;
-				custom.Visibility = sizeChoice.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
-				Save(current => current with { SidebarCompactIconMode = sizeChoice.SelectedIndex });
+				customSize.Visibility = sizeChoice.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+				var current = owner.EditorOptions;
+				if (sizeChoice.SelectedIndex == 2 && current.SidebarCompactIconMode != 2)
+				{
+					// Until the user picks a size, Custom starts at the size shown so far: 16 px from Original, 24 px from Largest.
+					// After that it comes back with the user's last size.
+					var pixels = current.SidebarCompactIconSizeChosen ? Math.Clamp(current.SidebarCompactIconSize, 8, 32) : ShownPixels(current.SidebarCompactIconMode);
+					showCustomSize?.Invoke(pixels);
+					Save(saved => saved with { SidebarCompactIconMode = 2, SidebarCompactIconSize = pixels });
+				}
+				else Save(saved => saved with { SidebarCompactIconMode = sizeChoice.SelectedIndex });
 			};
-			var updatingCustomSize = false;
-			customSize.ValueChanged += (_, _) =>
+			// A subtle fill with a card's outline, visible on the flyout in both themes (the near-white control fill disappears on
+			// the light flyout).
+			defaults.Children.Add(Raised(Themed(Themed(new Border
 			{
-				if (updatingCustomSize || !double.IsFinite(customSize.Value)) return;
-				var pixels = (int)Math.Clamp(Math.Round(customSize.Value), 8, 32);
-				updatingCustomSize = true;
-				try { customSize.Value = pixels; }
-				finally { updatingCustomSize = false; }
-				Save(current => current with { SidebarCompactIconSize = pixels });
-			};
-			defaults.Children.Add(SettingRow(Strings.CustomizationSidebarCompactIconSize, sizing));
+				CornerRadius = new CornerRadius(4),
+				BorderThickness = new Thickness(1),
+				Margin = new Thickness(0, 16, 0, 0),
+				Padding = new Thickness(12),
+				Child = compact
+			}, Border.BackgroundProperty, "SubtleFillColorSecondaryBrush"), Border.BorderBrushProperty, "CardStrokeColorDefaultBrush")));
 		}
 		// A label on the left with its control aligned right, used by every choice in the settings flyout.
 		private static Grid SettingRow(string resource, FrameworkElement control)
@@ -1212,57 +1380,69 @@ namespace Files.App.ViewModels.UserControls
 			return row;
 		}
 		private int PreviewExpansionMode(EditorRow row) => SidebarCustomizationStyle.ExpansionMode(row.Entry, row.Group, owner.EditorOptions);
+		// A brush that follows Files' theme for a property set in code (see CustomizationThemeBrushes).
+		private T Themed<T>(T target, DependencyProperty property, string key) where T : DependencyObject
+			=> CustomizationThemeBrushes.Bind(this, target, property, key);
 		private bool LegacyHeader(EditorRow row) => owner.EditorOptions.SidebarAppearance == 1 && SidebarCustomizationStyle.IsLegacyHeader(row.Group, row.Key);
 		private (double Text, double Icon) DefaultPoints(EditorRow row, int? size = null) => SidebarCustomizationStyle.DefaultPoints(size ?? row.Entry.Size,
-			row.Key.StartsWith("item:Drives:", StringComparison.Ordinal) || row.Entry.SourceKey.StartsWith("item:Drives:", StringComparison.Ordinal),
 			owner.EditorOptions, SidebarCustomizationStyle.IsLegacyHeader(row.Group, row.Key));
-		[DynamicWindowsRuntimeCast(typeof(Brush))]
-		private static void VerticalSeparator(Panel host) => host.Children.Add(new Border
+		private void VerticalSeparator(Panel host) => host.Children.Add(Themed(new Border
 		{
-			Width = 1, Height = 20, Margin = new Thickness(2, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center,
-			Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"], IsHitTestVisible = false
-		});
-		[DynamicWindowsRuntimeCast(typeof(Brush))]
-		private static void Separator(StackPanel host) => host.Children.Add(new Border { Height = 1, Margin = new Thickness(0, 4, 0, 4),
-			Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] });
+			Width = 1, Height = 20, Margin = new Thickness(2, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false
+		}, Border.BackgroundProperty, "DividerStrokeColorDefaultBrush"));
+		private void Separator(StackPanel host)
+			=> host.Children.Add(Themed(new Border { Height = 1, Margin = new Thickness(0, 4, 0, 4) }, Border.BackgroundProperty, "DividerStrokeColorDefaultBrush"));
 
+		// The Size choices, which one an entry shows, and the entry after one is picked: Custom keeps its sizes, or starts at those of
+		// the choice it replaces. The same for an item and for its inner folders.
+		private static readonly string[] SizeChoices = [Strings.SidebarEditorDefault, Strings.SidebarEditorMedium, Strings.SidebarEditorLarge, Strings.SidebarEditorCustom];
+		private static int SizeChoice(SidebarCustomizationState.Entry entry)
+			=> entry.Size == 3 || entry.TextPt > 0 || entry.IconPt > 0 ? 3 : entry.Size is 1 or 2 ? entry.Size : 0;
+		private static SidebarCustomizationState.Entry WithSizeChoice(SidebarCustomizationState.Entry entry, int choice, (double Text, double Icon) points) => entry with
+		{
+			Size = choice == 0 ? -1 : choice,
+			TextPt = choice == 3 ? entry.TextPt > 0 ? entry.TextPt : points.Text : 0,
+			IconPt = choice == 3 ? entry.IconPt > 0 ? entry.IconPt : points.Icon : 0
+		};
+		// Custom's Text (pt) and Icon (pt) boxes for an entry, applied live while typed, linked or not.
+		private void CustomSizes(StackPanel host, SidebarCustomizationState.Entry entry, (double Text, double Icon) points, bool textOnly,
+			Action<Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry>> editLive,
+			Action<Func<SidebarCustomizationState.Entry, SidebarCustomizationState.Entry>> edit)
+			=> Sizes(host, entry.TextPt > 0 ? entry.TextPt : points.Text, entry.IconPt > 0 ? entry.IconPt : points.Icon, entry.SizesLinked, textOnly,
+				(field, text, icon) => editLive(current => field == 0
+					? current with { TextPt = text, IconPt = current.SizesLinked ? icon : current.IconPt }
+					: current with { IconPt = icon, TextPt = current.SizesLinked ? text : current.TextPt }),
+				value => edit(current => current with { SizesLinked = value }));
 		// textOnly: for rows that show no icon (Legacy headings), only the text size is shown; a linked icon size still follows it.
-		private static void Sizes(StackPanel host, double textValue, double iconValue, bool linked, bool textOnly,
+		private void Sizes(StackPanel host, double textValue, double iconValue, bool linked, bool textOnly,
 			Action<int, double, double> save, Action<bool> saveLink)
 		{
-			var grid = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Stretch };
-			var text = new NumberBox
-			{
-				Header = Strings.SidebarEditorTextPoints.GetLocalizedResource(),
-				Value = textValue,
-				Minimum = 6,
-				Maximum = 36,
-				SmallChange = 0.5
-			};
-			var icon = new NumberBox
-			{
-				Header = Strings.SidebarEditorIconPoints.GetLocalizedResource(),
-				Value = iconValue,
-				Minimum = 6,
-				Maximum = 48,
-				SmallChange = 0.5
-			};
+			// [Text (pt) | box] [Icon (pt) | box] [link], each name joined to its box like the other settings.
+			var grid = new Grid { ColumnSpacing = 8, HorizontalAlignment = HorizontalAlignment.Stretch };
+			var text = new NumberBox { Value = textValue, Minimum = 6, Maximum = 36, SmallChange = 0.5 };
+			var icon = new NumberBox { Value = iconValue, Minimum = 6, Maximum = 48, SmallChange = 0.5 };
+			AutomationProperties.SetName(text, Strings.SidebarEditorTextPoints.GetLocalizedResource());
+			AutomationProperties.SetName(icon, Strings.SidebarEditorIconPoints.GetLocalizedResource());
 			var boxes = new[] { text, icon };
-			foreach (var box in boxes)
+			var textField = Labeled(Strings.SidebarEditorTextPoints, text, SizeLabelWidth);
+			var iconField = Labeled(Strings.SidebarEditorIconPoints, icon, SizeLabelWidth);
+			foreach (var field in new[] { textField, iconField })
 			{
 				grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-				SetColumn(box, grid.Children.Count);
-				grid.Children.Add(box);
+				SetColumn(field, grid.Children.Count);
+				grid.Children.Add(field);
 			}
 			grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-			var link = new ToggleButton
+			var link = Raised(new ToggleButton
 			{
 				IsChecked = linked,
 				Content = new FontIcon { Glyph = "\uE71B", FontSize = 14 },
-				VerticalAlignment = VerticalAlignment.Bottom,
-				Padding = new Thickness(8),
+				VerticalAlignment = VerticalAlignment.Center,
+				Padding = new Thickness(0),
+				Width = 32,
+				Height = 32,
 				MinWidth = 32
-			};
+			});
 			var description = Strings.SidebarEditorLinkSizes.GetLocalizedResource();
 			AutomationProperties.SetName(link, description);
 			ToolTipService.SetToolTip(link, description);
@@ -1285,9 +1465,31 @@ namespace Files.App.ViewModels.UserControls
 			}
 			text.ValueChanged += (_, _) => Changed(0);
 			icon.ValueChanged += (_, _) => Changed(1);
+			// Digits typed apply at once; the box being typed in keeps its text, only the linked one follows.
+			void Typed(int field, double typed)
+			{
+				if (updating || typed < 6 || typed > (field == 0 ? 36 : 48)) return;
+				updating = true;
+				try
+				{
+					var textNow = field == 0 ? typed : text.Value;
+					var iconNow = field == 1 ? typed : icon.Value;
+					if (linked && field == 0) icon.Value = iconNow = Math.Clamp(typed * iconValue / textValue, 6, 48);
+					if (linked && field == 1) text.Value = textNow = Math.Clamp(typed * textValue / iconValue, 6, 36);
+					save(field, textNow, iconNow);
+				}
+				finally { updating = false; }
+			}
+			LiveTyping(text, typed => Typed(0, typed));
+			LiveTyping(icon, typed => Typed(1, typed));
+			foreach (var box in boxes)
+			{
+				box.LostFocus += (_, _) => CommitLive();
+				SettingsValueEditing.Register(box, CommitLive, CancelLive);
+			}
 			if (textOnly)
 			{
-				icon.Visibility = link.Visibility = Visibility.Collapsed;
+				iconField.Visibility = link.Visibility = Visibility.Collapsed;
 				grid.ColumnDefinitions[1].Width = new GridLength(0);
 				grid.ColumnSpacing = 0;
 			}
@@ -1310,6 +1512,183 @@ namespace Files.App.ViewModels.UserControls
 			button.HorizontalContentAlignment = HorizontalAlignment.Center;
 			button.VerticalContentAlignment = VerticalAlignment.Center;
 		}
+		// A tag's name box, the same name as in Settings > Tags: Enter, or leaving the box, renames the tag there. A name Settings > Tags
+		// wouldn't save, an empty one included, shows "Invalid name" inside the box at its right end; Enter then does nothing, as in
+		// Settings > Tags, and leaving the box (or Escape) puts the tag's name back.
+		[DynamicWindowsRuntimeCast(typeof(Brush))]
+		[DynamicWindowsRuntimeCast(typeof(FontFamily))]
+		private Grid TagNameBox(EditorRow row)
+		{
+			var name = row.OriginalName;
+			var box = new TextBox
+			{
+				Text = name, MaxLength = 200, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(0, 3, 3, 0),
+				Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent)
+			};
+			AutomationProperties.SetName(box, Strings.SidebarEditorTagName.GetLocalizedResource());
+			// Settings > Tags' error icon and wording, small and in red at the box's right end, with the naming rules in its tooltip.
+			object Resource(string key) => Application.Current.Resources[key];
+			var symbols = (FontFamily)Resource("SymbolThemeFontFamily");
+			var icon = new Grid { VerticalAlignment = VerticalAlignment.Center };
+			var iconBackground = Themed(new TextBlock { Text = (string)Resource("InfoBarIconBackgroundGlyph"), FontFamily = symbols, FontSize = 14 },
+				TextBlock.ForegroundProperty, "SystemFillColorCriticalBrush");
+			AutomationProperties.SetAccessibilityView(iconBackground, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+			icon.Children.Add(iconBackground);
+			icon.Children.Add(Themed(new TextBlock { Text = (string)Resource("InfoBarErrorIconGlyph"), FontFamily = symbols, FontSize = 14 },
+				TextBlock.ForegroundProperty, "InfoBarInformationalSeverityIconForeground"));
+			var invalid = new StackPanel
+			{
+				Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right,
+				VerticalAlignment = VerticalAlignment.Center, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Visibility = Visibility.Collapsed,
+				Children =
+				{
+					icon,
+					Themed(new TextBlock { Text = Strings.InvalidTagNameWarning.GetLocalizedResource(), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+						TextBlock.ForegroundProperty, "SystemFillColorCriticalBrush")
+				}
+			};
+			ToolTipService.SetToolTip(invalid, Strings.TagNameRules.GetLocalizedResource());
+			// The box's own padding, put back when the warning hides.
+			Thickness? basePadding = null;
+			void ShowInvalid(bool show)
+			{
+				invalid.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+				AutomationProperties.SetHelpText(box, show ? Strings.InvalidTagNameWarning.GetLocalizedResource() : "");
+				// The box's clear button would sit under the warning.
+				if (FindTemplatePart(box, "DeleteButton") is { } clear)
+				{
+					clear.Opacity = show ? 0 : 1;
+					clear.IsHitTestVisible = !show;
+				}
+				if (!show && basePadding is { } original) box.Padding = original;
+			}
+			box.TextChanged += (_, _) => ShowInvalid(!owner.IsEditorTagNameValid(row.Key, box.Text));
+			// While the warning shows, the typed text stops before it.
+			invalid.SizeChanged += (_, args) =>
+			{
+				if (invalid.Visibility != Visibility.Visible) return;
+				var padding = basePadding ??= box.Padding;
+				box.Padding = new Thickness(padding.Left, padding.Top, args.NewSize.Width + 16, padding.Bottom);
+			};
+			void Commit(bool keepTyping)
+			{
+				if (box.Text == name) return;
+				if (owner.IsEditorTagNameValid(row.Key, box.Text))
+				{
+					// Renamed in Files at once, as in Settings > Tags; Undo doesn't reverse it.
+					if (!owner.RenameEditorTag(row.Key, box.Text)) return;
+					name = box.Text;
+					renamingTagKey = row.Key;
+					QueueRefresh(false);
+				}
+				else if (!keepTyping) box.Text = name;
+			}
+			// The panel's shared Enter and Escape handling would save or put the name back at once, so this box handles them itself;
+			// clicking elsewhere still finishes it like any other box.
+			SettingsValueEditing.Exclude(box);
+			SettingsValueEditing.Register(box, () => Commit(false));
+			pendingTextCommits.Add(() => Commit(false));
+			box.LostFocus += (_, _) => Commit(false);
+			box.KeyDown += (_, args) =>
+			{
+				// Escape, or Enter with a name that was saved, leaves the box; Enter with a name it can't use keeps typing.
+				if (args.Key == VirtualKey.Enter) { Commit(true); if (box.Text == name) Focus(FocusState.Programmatic); }
+				else if (args.Key == VirtualKey.Escape) { box.Text = name; Focus(FocusState.Programmatic); }
+				else return;
+				args.Handled = true;
+			};
+			return new Grid { Children = { box, invalid } };
+		}
+		// Digits typed in a number box apply at once, before Enter (only while it has focus, so its own updates aren't taken as typing).
+		[DynamicWindowsRuntimeCast(typeof(TextBox))]
+		private static void LiveTyping(NumberBox box, Action<double> apply)
+		{
+			TextBox? input = null;
+			box.Loaded += (_, _) =>
+			{
+				if (input is not null || FindTemplatePart(box, "InputBox") is not TextBox found) return;
+				input = found;
+				input.TextChanged += (_, _) =>
+				{
+					if (input.FocusState != FocusState.Unfocused &&
+						double.TryParse(input.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out var typed) &&
+						double.IsFinite(typed))
+						apply(typed);
+				};
+			};
+		}
+		// A small shadow under a control (depth 3), in light mode only; dark mode shows none. It follows theme changes.
+		private static readonly ThemeShadow smallShadow = new();
+		private static T Raised<T>(T element) where T : FrameworkElement
+		{
+			void Apply()
+			{
+				var light = element.ActualTheme == ElementTheme.Light;
+				element.Shadow = light ? smallShadow : null;
+				element.Translation = new System.Numerics.Vector3(0, 0, light ? 3 : 0);
+			}
+			element.ActualThemeChanged += (_, _) => Apply();
+			// The theme is only known once the control is shown.
+			element.Loaded += (_, _) => Apply();
+			Apply();
+			return element;
+		}
+		// A named part of a control's template, such as a text box's clear button.
+		[DynamicWindowsRuntimeCast(typeof(FrameworkElement))]
+		private static FrameworkElement? FindTemplatePart(DependencyObject parent, string partName)
+		{
+			for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+			{
+				var child = VisualTreeHelper.GetChild(parent, index);
+				if (child is FrameworkElement element && element.Name == partName) return element;
+				if (FindTemplatePart(child, partName) is { } found) return found;
+			}
+			return null;
+		}
+		// An eye drawn with its lid closed: the lid's curve and three lashes, 16 px.
+		private static PathIcon ClosedEye()
+		{
+			static PathFigure Shape(Point start, params PathSegment[] segments)
+			{
+				var figure = new PathFigure { StartPoint = start, IsClosed = true, IsFilled = true };
+				foreach (var segment in segments) figure.Segments.Add(segment);
+				return figure;
+			}
+			static LineSegment Line(double x, double y) => new() { Point = new Point(x, y) };
+			static QuadraticBezierSegment Curve(double cx, double cy, double x, double y) => new() { Point1 = new Point(cx, cy), Point2 = new Point(x, y) };
+			var geometry = new PathGeometry();
+			geometry.Figures.Add(Shape(new Point(1, 6.5), Curve(8, 13.5, 15, 6.5), Line(15, 8), Curve(8, 15, 1, 8)));
+			geometry.Figures.Add(Shape(new Point(3, 9.6), Line(4.2, 10.2), Line(2.9, 12.4), Line(1.7, 11.8)));
+			geometry.Figures.Add(Shape(new Point(7.3, 11.4), Line(8.7, 11.4), Line(8.7, 14.4), Line(7.3, 14.4)));
+			geometry.Figures.Add(Shape(new Point(11.8, 10.2), Line(13, 9.6), Line(14.3, 11.8), Line(13.1, 12.4)));
+			return new PathIcon { Data = geometry, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
+		}
+		// A 32 px toggle with its text and, unless eye is false, an eye that is shut while it is off.
+		private static ToggleButton EyeToggle(string resource, bool isOn, Action<bool> save, bool eye = true)
+		{
+			var label = resource.GetLocalizedResource();
+			var open = new FontIcon { Glyph = "\uE890", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Visibility = isOn ? Visibility.Visible : Visibility.Collapsed };
+			var shut = ClosedEye();
+			shut.Visibility = isOn ? Visibility.Collapsed : Visibility.Visible;
+			var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+			if (eye) content.Children.Add(new Grid { Children = { open, shut } });
+			content.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+			var toggle = new ToggleButton
+			{
+				Content = content,
+				IsChecked = isOn, MinWidth = 0, MinHeight = 32, Padding = new Thickness(12, 4, 12, 4), VerticalAlignment = VerticalAlignment.Center,
+				HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
+			};
+			AutomationProperties.SetName(toggle, label);
+			toggle.Click += (_, _) =>
+			{
+				var on = toggle.IsChecked == true;
+				open.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+				shut.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+				save(on);
+			};
+			return Raised(toggle);
+		}
 		private static Button IconButton(string glyph, string resource, Action action)
 		{
 			var button = new Button
@@ -1321,7 +1700,7 @@ namespace Files.App.ViewModels.UserControls
 				VerticalAlignment = VerticalAlignment.Center
 			};
 			var label = resource.GetLocalizedResource(); AutomationProperties.SetName(button, label); ToolTipService.SetToolTip(button, label);
-			button.Click += (_, _) => action(); return button;
+			button.Click += (_, _) => action(); return Raised(button);
 		}
 		private static CheckBox Check(StackPanel host, string resource, bool value, Action<bool> save)
 		{
@@ -1338,14 +1717,12 @@ namespace Files.App.ViewModels.UserControls
 			control.Checked += (_, _) => save(true); control.Unchecked += (_, _) => save(false); host.Children.Add(control);
 			return control;
 		}
-		private void Text(StackPanel host, string resource, string value, Action<string> save, bool enabled = true)
+		private void Text(StackPanel host, string resource, string value, Action<string> save, bool enabled = true, double labelWidth = LabelColumnWidth)
 		{
 			var control = new TextBox
 			{
-				Header = new TextBlock { Text = resource.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
 				Text = value,
-				PlaceholderText = resource == Strings.SidebarVisualTarget ? Strings.SidebarVisualTargetPlaceholder.GetLocalizedResource() : "",
-				MaxLength = resource == Strings.SidebarVisualTarget ? 32768 : 200,
+				MaxLength = 200,
 				IsEnabled = enabled
 			};
 			void Commit() { if (!control.IsEnabled || control.Text == value) return; value = control.Text; save(value); }
@@ -1360,30 +1737,108 @@ namespace Files.App.ViewModels.UserControls
 					args.Handled = true;
 				}
 			};
-			host.Children.Add(control);
+			AutomationProperties.SetName(control, resource.GetLocalizedResource());
+			host.Children.Add(Labeled(resource, control, labelWidth));
 		}
-		private static void Number(StackPanel host, string resource, double value, double minimum, double maximum, Action<double> save)
+		// A whole number of pixels (separator and gap heights): the arrows step by 1, and a typed decimal is rounded.
+		private void Number(StackPanel host, string resource, double value, double minimum, double maximum, Action<double> save)
 		{
 			var control = new NumberBox
 			{
-				Header = new TextBlock { Text = resource.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
 				Value = value,
 				Minimum = minimum,
 				Maximum = maximum,
-				SmallChange = 0.5,
+				SmallChange = 1,
 				SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
 			};
-			control.ValueChanged += (_, args) => { if (double.IsFinite(args.NewValue)) save(Math.Clamp(args.NewValue, minimum, maximum)); }; host.Children.Add(control);
-		}
-		private static void Combo(StackPanel host, string resource, string[] labels, int selected, Action<int> save)
-		{
-			var control = new ComboBox
+			static double Whole(double number) => Math.Round(number, MidpointRounding.AwayFromZero);
+			AutomationProperties.SetName(control, resource.GetLocalizedResource());
+			control.ValueChanged += (_, args) =>
 			{
-				Header = new TextBlock { Text = resource.GetLocalizedResource(), TextWrapping = TextWrapping.Wrap },
-				HorizontalAlignment = HorizontalAlignment.Stretch
+				if (!double.IsFinite(args.NewValue)) return;
+				var whole = Math.Clamp(Whole(args.NewValue), minimum, maximum);
+				// The box shows the rounded number too.
+				if (whole != args.NewValue) control.Value = whole;
+				save(whole);
 			};
-			foreach (var label in labels) control.Items.Add(label.GetLocalizedResource()); control.SelectedIndex = selected;
-			control.SelectionChanged += (_, _) => { if (control.SelectedIndex >= 0) save(control.SelectedIndex); }; host.Children.Add(control);
+			// Shown at once while typed or stepped; one Undo step when confirmed, none after Escape.
+			LiveTyping(control, typed => { if (typed >= minimum && typed <= maximum) save(Whole(typed)); });
+			control.LostFocus += (_, _) => CommitLive();
+			SettingsValueEditing.Register(control, CommitLive, CancelLive);
+			host.Children.Add(Labeled(resource, control));
 		}
+		private void Combo(StackPanel host, string resource, string[] labels, int selected, Action<int> save, double labelWidth = LabelColumnWidth)
+		{
+			var control = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+			AutomationProperties.SetName(control, resource.GetLocalizedResource());
+			foreach (var label in labels) control.Items.Add(label.GetLocalizedResource()); control.SelectedIndex = selected;
+			control.SelectionChanged += (_, _) => { if (control.SelectedIndex >= 0) save(control.SelectedIndex); };
+			host.Children.Add(Labeled(resource, control, labelWidth));
+		}
+		// A setting's name joined to its box as one control: the name on a slightly darker part, a divider, then the box. Every
+		// row's divider sits on one line: rows that start with the Icon button give the name part what the button doesn't take.
+		private const double LabelColumnWidth = 176;
+		private const double IconButtonWidth = 80;
+		private const double IconGap = 8;
+		private const double ShortLabelWidth = LabelColumnWidth - IconButtonWidth - IconGap;
+		// The name part of the custom Text (pt) and Icon (pt) boxes, which share a row.
+		private const double SizeLabelWidth = 84;
+		[DynamicWindowsRuntimeCast(typeof(Control))]
+		[DynamicWindowsRuntimeCast(typeof(TextBox))]
+		private Border Labeled(string resource, FrameworkElement control, double labelWidth = LabelColumnWidth)
+		{
+			var grid = new Grid();
+			grid.ColumnDefinitions.Add(new() { Width = new GridLength(labelWidth - 1) });
+			grid.ColumnDefinitions.Add(new() { Width = new GridLength(1) });
+			grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+			var name = Themed(new TextBlock
+			{
+				Text = resource.GetLocalizedResource(), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+				// Always one line, even where a text style turns wrapping on.
+				TextWrapping = TextWrapping.NoWrap
+			}, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+			ToolTipService.SetToolTip(name, resource.GetLocalizedResource());
+			grid.Children.Add(Themed(new Border { CornerRadius = new CornerRadius(3, 0, 0, 3), Padding = new Thickness(10, 0, 6, 0), Child = name },
+				// A faint dark wash, so the name part is darker than the box in light and dark alike.
+				Border.BackgroundProperty, "ControlAltFillColorSecondaryBrush"));
+			var divider = Themed(new Border(), Border.BackgroundProperty, "ControlStrokeColorDefaultBrush");
+			SetColumn(divider, 1); grid.Children.Add(divider);
+			// The box drops its own frame; the joined frame around both is its frame.
+			// Its text is centred in the frame on the same line as the name.
+			if (control is Control box)
+			{
+				box.BorderThickness = new Thickness(0);
+				box.CornerRadius = new CornerRadius(0, 3, 3, 0);
+				box.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+				box.MinHeight = 0;
+				box.VerticalContentAlignment = VerticalAlignment.Center;
+			}
+			// A text box always draws its text at the top, so its padding places the text: 6 px above and 5 below the 19 px line fill
+			// the frame's 30 px, the same place as the centred name.
+			if (FindTextBox(control) is { } text) { text.MinHeight = 0; text.Padding = new Thickness(12, 6, 8, 5); }
+			// A number box draws its text in a text box inside its template, which gets the same once it is shown.
+			if (control is NumberBox number)
+				number.Loaded += (_, _) =>
+				{
+					if (FindTemplatePart(number, "InputBox") is not TextBox input) return;
+					input.MinHeight = 0;
+					input.Padding = new Thickness(12, 6, 8, 5);
+				};
+			control.HorizontalAlignment = HorizontalAlignment.Stretch;
+			control.VerticalAlignment = VerticalAlignment.Stretch;
+			SetColumn(control, 2); grid.Children.Add(control);
+			return Raised(Themed(Themed(new Border
+			{
+				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), MinHeight = 32, Child = grid
+			}, Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush"), Border.BackgroundProperty, "ControlFillColorDefaultBrush"));
+		}
+		// The text box in a joined box: the box itself, or the one inside a tag's name box (with its warning).
+		private static TextBox? FindTextBox(FrameworkElement control)
+			=> control as TextBox ?? (control as Panel)?.Children.OfType<TextBox>().FirstOrDefault();
+		// A settings card's open part in its header's colour: the card's own content colour is cleared, and the part placed in it is
+		// painted with the header's brush, following Files' theme.
+		private const string HeaderColour = "CardBackgroundFillColorDefaultBrush";
+		private static void HeaderColoured(SettingsExpander card)
+			=> card.Resources["ExpanderContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 	}
 }

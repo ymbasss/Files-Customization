@@ -54,6 +54,9 @@ namespace Files.App.Controls
 
 		// The Legacy look keeps each row's arrow at the pane's right edge, so its rows are as wide as the pane and long names end
 		// with "…" instead of scrolling sideways. Otherwise the pane scrolls sideways, as the original sidebar does.
+		// A row changed height: the list lays its rows out again.
+		internal void InvalidateRowLayout() => MenuItemsHost.InvalidateMeasure();
+
 		internal void FitRowsToPane(bool fit)
 		{
 			MenuItemHostScrollViewer.HorizontalScrollMode = fit ? ScrollMode.Disabled : ScrollMode.Enabled;

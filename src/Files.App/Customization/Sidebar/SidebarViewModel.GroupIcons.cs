@@ -72,7 +72,7 @@ namespace Files.App.ViewModels.UserControls
 			if (!IsStoredEditorIcon(source))
 				return;
 
-			var state = SidebarCustomizationState.Parse(UserSettingsService.AppearanceSettingsService.SidebarCustomization);
+			var state = EditableCustomization;
 			var changed = false;
 			foreach (var entry in state.Entries.Values.ToArray())
 			{
@@ -163,6 +163,22 @@ namespace Files.App.ViewModels.UserControls
 				Icon = source is null ? null : GetVisualIcon(source),
 				MenuOptions = new ContextMenuOptions()
 			};
+		}
+
+		// The own name of what a duplicate copies (its title in the panel), or the name in its path once that is gone.
+		private string VisualShortcutSourceName(SidebarCustomizationState.Entry entry)
+			=> entry.SourceKey.Length > 0 && ResolveVisualShortcutSource(entry.SourceKey) is { } source && EditorOwnName(source) is { Length: > 0 } name
+				? name : VisualTargetName(entry.Target);
+
+		// tag:Work or tag:"My tag" gives the tag's name; a folder path gives the folder's name.
+		private static string VisualTargetName(string target)
+		{
+			if (target.StartsWith("tag:", StringComparison.Ordinal))
+			{
+				var tag = target[4..];
+				return tag.Length > 1 && tag[0] == '"' && tag[^1] == '"' ? tag[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal) : tag;
+			}
+			return Path.GetFileName(target.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } leaf ? leaf : target;
 		}
 
 		private INavigationControlItem? ResolveVisualShortcutSource(string key)

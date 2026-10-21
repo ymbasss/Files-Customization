@@ -55,8 +55,8 @@ namespace Files.App.Data.Models
 			foreach (var line in value.Split('\n', StringSplitOptions.RemoveEmptyEntries))
 			{
 				var fields = line.Split('\t');
-				// Saved layouts have had 7, 12 or 14 to 22 fields over time.
-				if (fields.Length is not (7 or 12 or (>= 14 and <= 22)) ||
+				// Saved layouts have had 7, 12 or 14 to 23 fields over time. The 23rd (a retired per-item spacing) is ignored.
+				if (fields.Length is not (7 or 12 or (>= 14 and <= 23)) ||
 					!int.TryParse(fields[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out var order) ||
 					!int.TryParse(fields[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out var size))
 					continue;
@@ -123,7 +123,10 @@ namespace Files.App.Data.Models
 
 		// Keep retired field positions empty so earlier saved layouts remain readable.
 		public string Serialize() => string.Join("\n", Entries.Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Select(x =>
-			string.Join("\t",
+			string.Join("\t", Fields(x))));
+
+		private static IEnumerable<string> Fields(Entry x) =>
+			[
 				Uri.EscapeDataString(x.Key),
 				Uri.EscapeDataString(x.Label),
 				Uri.EscapeDataString(x.Target),
@@ -145,6 +148,7 @@ namespace Files.App.Data.Models
 				x.HidePin ? "1" : "0",
 				Uri.EscapeDataString(x.IconSource),
 				Uri.EscapeDataString(x.SourceKey),
-				Uri.EscapeDataString(x.Id))));
+				Uri.EscapeDataString(x.Id)
+			];
 	}
 }

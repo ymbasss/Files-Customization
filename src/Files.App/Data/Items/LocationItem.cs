@@ -83,7 +83,7 @@ namespace Files.App.Data.Items
 			set
 			{
 				// Sidebar customization follows a new children collection; otherwise this is the original plain property.
-				if (!SidebarCustomized)
+				if (SidebarLook is null)
 					childItems = value;
 				else if (SetProperty(ref childItems, value))
 					OnPropertyChanged(nameof(Children));

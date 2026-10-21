@@ -114,10 +114,10 @@ namespace Files.App.Views.Settings
 			{
 				Glyph = "",
 				FontSize = 12,
-				Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
 				Visibility = Visibility.Collapsed,
 				VerticalAlignment = VerticalAlignment.Center
 			};
+			Themed(layoutHint, IconElement.ForegroundProperty, "TextFillColorSecondaryBrush");
 			ToolTipService.SetToolTip(layoutHint, Strings.CustomizationColumnsAppSettingsNote.GetLocalizedResource());
 			var contentSizing = new Grid { ColumnSpacing = 8 };
 			contentSizing.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
@@ -171,13 +171,12 @@ namespace Files.App.Views.Settings
 						Children =
 						{
 							syncRow,
-							new TextBlock
+							Themed(new TextBlock
 							{
 								Text = Strings.CustomizationColumnsAppSettingsNote.GetLocalizedResource(),
 								Style = (Style)Application.Current.Resources["App.Theme.CaptionTextBlockStyle"],
-								Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
 								TextWrapping = TextWrapping.Wrap
-							}
+							}, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush")
 						}
 					}
 				}
@@ -212,11 +211,10 @@ namespace Files.App.Views.Settings
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
 			actions.Children.Add(undo);
 			actions.Children.Add(redo);
-			actions.Children.Add(new Border
+			actions.Children.Add(Themed(new Border
 			{
-				Width = 1, Height = 20, Margin = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
-				Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"]
-			});
+				Width = 1, Height = 20, Margin = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center
+			}, Border.BackgroundProperty, "DividerStrokeColorDefaultBrush"));
 			actions.Children.Add(reset);
 
 			var top = new Grid { ColumnSpacing = 16, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -259,7 +257,6 @@ namespace Files.App.Views.Settings
 			var rows = new FrameworkElement[DefaultColumns.Length];
 			var boxes = new CheckBox[DefaultColumns.Length];
 			int? draggedColumn = null;
-			var accent = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
 			for (int index = 0; index < DefaultColumns.Length; index++)
 			{
 				var column = DefaultColumns[index];
@@ -267,33 +264,36 @@ namespace Files.App.Views.Settings
 				var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 				label.Children.Add(new TextBlock { Text = column.Heading.GetLocalizedResource(), VerticalAlignment = VerticalAlignment.Center });
 				if (column.Note is { } note)
-					label.Children.Add(new TextBlock
+					label.Children.Add(Themed(new TextBlock
 					{
 						Text = note.GetLocalizedResource(),
 						Style = (Style)Application.Current.Resources["App.Theme.CaptionTextBlockStyle"],
-						Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
 						VerticalAlignment = VerticalAlignment.Center
-					});
+					}, TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush"));
 				var box = CenteredCheckBox(label);
 				AutomationProperties.SetName(box, column.Heading.GetLocalizedResource());
 				if (column.SetShown is { } setShown)
 					box.Click += (_, _) => ChangeColumns(() => setShown(LayoutSettings, box.IsChecked == true));
-				// The system gripper glyph, drawn as text so it stays sharp at any scale.
-				var grip = new FontIcon
+				// The system gripper glyph at its 16 px design size, in a whole-pixel 20 px box so its thin bars land on pixels; the
+				// secondary text colour dims it without opacity, which would soften it.
+				var grip = Themed(new FontIcon
 				{
 					Glyph = "",
-					FontSize = 20,
-					Opacity = 0.6,
+					FontSize = 16,
+					Width = 20,
+					Height = 20,
 					VerticalAlignment = VerticalAlignment.Center
-				};
+				}, IconElement.ForegroundProperty, "TextFillColorSecondaryBrush");
 				ToolTipService.SetToolTip(grip, Strings.CustomizationColumnsDragToReorder.GetLocalizedResource());
 				// Insertion lines above and below the row; drawn over it, so showing them doesn't move anything.
-				var lineAbove = new Border { Height = 2, VerticalAlignment = VerticalAlignment.Top, Background = accent, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
-				var lineBelow = new Border { Height = 2, VerticalAlignment = VerticalAlignment.Bottom, Background = accent, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+				var lineAbove = Themed(new Border { Height = 2, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, IsHitTestVisible = false },
+					Border.BackgroundProperty, "AccentFillColorDefaultBrush");
+				var lineBelow = Themed(new Border { Height = 2, VerticalAlignment = VerticalAlignment.Bottom, Visibility = Visibility.Collapsed, IsHitTestVisible = false },
+					Border.BackgroundProperty, "AccentFillColorDefaultBrush");
 				// Rows highlight on hover, like list items, to show they can be dragged.
 				var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 				var row = new Grid { MinHeight = 36, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(4), Background = transparent, AllowDrop = true };
-				row.PointerEntered += (_, _) => row.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+				row.PointerEntered += (_, _) => Themed(row, Panel.BackgroundProperty, "SubtleFillColorSecondaryBrush");
 				row.PointerExited += (_, _) => row.Background = transparent;
 				row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
 				row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -375,6 +375,9 @@ namespace Files.App.Views.Settings
 				redo.IsEnabled = editable && columnHistory.CanRedo(current);
 			});
 		}
+		// A brush that follows Files' theme for a property set in code (see CustomizationThemeBrushes).
+		private T Themed<T>(T target, DependencyProperty property, string key) where T : DependencyObject
+			=> CustomizationThemeBrushes.Bind(SettingsHost, target, property, key);
 		private static Files.App.ViewModels.UserControls.SidebarViewModel SidebarOwner => Ioc.Default.GetRequiredService<Files.App.ViewModels.UserControls.SidebarViewModel>();
 		private void SettingsChanged(object? sender, PropertyChangedEventArgs args)
 		{
@@ -400,7 +403,7 @@ namespace Files.App.Views.Settings
 			var before = Options;
 			var after = update(before);
 			Settings.CustomizationPreferences = after.Serialize();
-			SwitchLinkedSettings(before.CustomizationEnabled && before.ColumnsEnabled, after.CustomizationEnabled && after.ColumnsEnabled);
+			SwitchLinkedSettings(before.ColumnsEnabled, after.ColumnsEnabled);
 			RefreshControls();
 		}
 
@@ -424,7 +427,7 @@ namespace Files.App.Views.Settings
 			if (isOn || hasSaved && saved[0] == 'U')
 				store.Write(CustomizationSettingsStore.LinkedAppSettingsKey, (isOn ? "U" : "F") + current);
 		}
-		private bool Enabled(Func<CustomizationPreferences, bool> flag) => Options.CustomizationEnabled && flag(Options);
+		private bool Enabled(Func<CustomizationPreferences, bool> flag) => flag(Options);
 		[DynamicWindowsRuntimeCast(typeof(Style))]
 		private void BuildSettings()
 		{
@@ -562,7 +565,7 @@ namespace Files.App.Views.Settings
 		{
 			var control = new ToggleSwitch();
 			AutomationProperties.SetName(control, section.Header?.ToString() ?? "");
-			control.Toggled += (_, _) => Save(options => update(options with { CustomizationEnabled = true }, control.IsOn));
+			control.Toggled += (_, _) => Save(options => update(options, control.IsOn));
 			section.Content = control;
 			updateControls.Add(() => { control.IsOn = Enabled(flag); });
 		}

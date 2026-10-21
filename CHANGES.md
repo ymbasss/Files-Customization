@@ -1,112 +1,75 @@
-# Customization change map
+# How this fork changes Files 4.3
 
-The Files 4.3 source with the **Customization** features added: Sidebar, Column details and Shortcut badges.
-Settings > Customization turns each feature on or off. A feature that is off runs 4.3's original code.
+A guide for working on the code. What the features do is in `.github/README.md`. Paths are relative to `src\`.
 
-Compared with the original Files 4.3 source, this copy has:
-- **35 added files**: the features' own code, almost all of it in `Customization` folders.
-- **26 changed 4.3 files**: mostly one-line hooks that call into the added files, plus this fork's README and AI agent notes.
-- **No deleted 4.3 files.**
+## How it is built
 
-The copy has no build output (`bin`, `obj`, `.vs`, `artifacts`, `packages`, the dialog and launcher projects' `x64`/`Debug`/`Release`
-folders, `Assets\FilesOpenDialog` binaries or MIDL `*_i.c`/`*_i.h` files). Visual Studio recreates all of them when you restore and build.
+- **Our code is in two folders:** `Files.App\Customization` and `Files.App.Controls\Customization`. Where it extends a Files
+  type, it is a `partial` class with the same name (for example `SidebarViewModel.Editor.cs` extends `SidebarViewModel`).
+- **Files' own files only get hooks:** usually one line that calls into our code. There are 26 such files; every hook is listed below.
+- **A feature that is off runs Files 4.3's code.** Each hook first checks the feature's switch (`SidebarCustomizationEnabled`,
+  `ColumnsActive`, `SidebarLook is null`, ...) and otherwise does exactly what 4.3 did.
+- **Settings** are in `customization.json` in the app's settings folder, read and written by `CustomizationSettingsStore`. Files'
+  `IAppearanceSettingsService` passes two of its keys through: `SidebarCustomization` (the saved sidebar items) and
+  `CustomizationPreferences` (every option). Other keys: `ColumnDefaultFolders`, `ColumnOwnWidthFolders`, `SidebarCollapsedGroups`,
+  `LinkedAppSettings`.
 
-Paths are relative to `src\`. User documentation for every feature is in `FEATURES.md`.
+## Where things are
 
-## Saved settings
-
-- `customization.json` in the app's settings folder. It replaces `custom-features.json` from earlier versions, which is moved
-  automatically the first time the app runs.
-- Keys: `SidebarCustomization`, `CustomizationPreferences`, `ColumnDefaultFolders`, `ColumnOwnWidthFolders`, `SidebarCollapsedGroups`, `LinkedAppSettings`.
-
-## Added files
-
-### Settings page (`Files.App\Customization\Settings\`)
-| File | Purpose |
+| To change... | Look in |
 |---|---|
-| `CustomizationSettingsPage.xaml` / `.xaml.cs` | Settings > Customization: feature switches, Column details options, Shortcut badges options, and the sidebar panel (each Settings page owns its panel). |
-| `CustomizationSettingsStore.cs` | Reads and writes `customization.json`, moves `custom-features.json` to it, and keeps the app's linked settings while a feature is on. |
+| Settings > Customization (switches, Column details and Shortcut badges options) | `Customization\Settings\CustomizationSettingsPage.xaml(.cs)` |
+| The sidebar panel (preview, item settings, Unify Appearance, Options, Undo) | `Customization\Sidebar\SidebarCustomizationPanel.cs` |
+| What the panel does to the sidebar (rows, edits, Undo snapshots, tags) | `Customization\Sidebar\SidebarViewModel.Editor.cs` |
+| How saved settings are applied to the real sidebar | `SidebarViewModel.Customization.cs` (look, labels, sections), `.DragCustomization.cs` (placement, drag, item IDs), `.LegacyAppearance.cs`, `.GroupIcons.cs`, `.Settings.cs` (switching on and off) |
+| How a row is drawn | `Files.App.Controls\Customization\SidebarItem.Appearance.cs` (from the `SidebarLook` record in `SidebarContracts.cs`), `SidebarItem.LegacyAppearance.cs` |
+| The panel's preview | `Files.App.Controls\Customization\SidebarView.Preview.cs`, `SidebarItem.Preview.cs` |
+| Saved formats and rules | `Customization\Models\`: `CustomizationPreferences.cs` (options and their defaults), `SidebarCustomizationState.cs` (one entry per sidebar item), `SidebarCustomizationStyle.cs` (sizes, expansion), `CustomizationChangeHistory.cs` (Undo) |
+| Column details | `Customization\Columns\DetailsLayoutPage.Customization.cs` (sizing, fitting, per-folder widths), `.ColumnMenu.cs`, `.ColumnOrder.cs`; `Models\ColumnWidthFitter.cs`, `CustomizationColumnOrder.cs` |
+| Shortcut badges | `Customization\Services\CustomizationShortcutArrow.cs`, `Models\CustomizationShortcutArrowPolicy.cs` |
+| Enter / Escape / click-away in boxes; colours that follow Files' theme | `Customization\Services\SettingsValueEditing.cs`, `CustomizationThemeBrushes.cs` |
+| Text shown to the user | `Files.App\Strings\en-US\Resources.resw`, keys starting with `Customization` or `SidebarEditor` |
 
-### Models (`Files.App\Customization\Models\`)
-| File | Purpose |
+## Hooks in Files 4.3's files
+
+### Settings page
+| File | Hook |
 |---|---|
-| `CustomizationPreferences.cs` | All feature options: parsing, saving, and the effective values when a feature is off. |
-| `SidebarCustomizationState.cs` | Saved per-item sidebar entries (label, icon, size, order, group, hidden, expansion). |
-| `SidebarCustomizationStyle.cs` | Shared appearance and visibility rules, including the three-state Show icons and Show expansion arrows options. |
-| `SidebarPreviewHierarchy.cs` | Which rows the panel preview shows, based on which rows are collapsed. |
-| `CustomizationChangeHistory.cs` | Undo and Redo history, with a memory limit. |
-| `CustomizationColumnOrder.cs` | Saved column order. |
-| `ColumnWidthFitter.cs` | Column width calculations for fitting to the window and fitting to content. |
-| `CustomizationShortcutArrowPolicy.cs` | Decides where shortcut badges are hidden. |
+| `Files.App\Data\Contracts\IAppearanceSettingsService.cs` | Adds `SidebarCustomization` and `CustomizationPreferences`. |
+| `Files.App\Data\Enums\SettingsPageKind.cs` | Adds `CustomizationPage`. |
+| `Files.App\ViewModels\Settings\SettingsPageViewModel.cs` | `CustomizationNavigationItem`, kept out of the main list; `SettingsScrollBarVisibility` (always shown on Customization). |
+| `Files.App\Views\Settings\SettingsPage.xaml` / `.xaml.cs` | The item in the Settings sidebar's footer; the scroll bar binding; `CustomizationPage => typeof(CustomizationSettingsPage)`. |
+| `Files.App\ViewModels\Settings\SettingsSearchIndexer.cs` | Adds the page to Settings search. |
+| `Files.App\Strings\en-US\Resources.resw` | Our strings. |
 
-### Services (`Files.App\Customization\Services\`)
-| File | Purpose |
+### Sidebar
+| File | Hook |
 |---|---|
-| `CustomizationShortcutArrow.cs` | Attached properties that hide shortcut badges in layouts and search suggestions. |
-| `SettingsValueEditing.cs` | Enter confirms and Escape cancels text and number edits; clicking elsewhere finishes the edit. |
+| `Files.App\ViewModels\UserControls\SidebarViewModel.cs` | `AreSectionsHidden` is false while on; `RefreshVisualSidebar`, `RefreshVisualSectionIcon`, `RestoreVisualPlacements` after loading; in the section list handlers `RemoveMovedSectionItems`, `IsMovedFromOtherSection`, `IsPlacedOutsideSection`, `CustomizeAddedSectionItem`, `CustomizeAddedSection`; `FindVisualSection`; switched-off sections kept with `KeepsSwitchedOffSections` / `RefreshSectionVisibility`; our two settings go to `HandleCustomSidebarSettingChangedAsync`; clicks go through `HandleVisualItemInvoked` / `VisualTarget`; drag and drop through `HandleVisualDragOverAsync` / `HandleVisualDropAsync`; "Reorder sidebar items" hidden while on. |
+| `Files.App\ViewModels\UserControls\SidebarViewModel.FlatTree.cs` | Skips hidden rows (`IsVisualRowHidden`), lists compact section contents (`ShowsCompactGroupContents`), refreshes icons and Legacy insets. |
+| `Files.App\ViewModels\UserControls\SidebarViewModel.TabExpansion.cs` | `ApplyVisualPreferences` for new items; calls Files' own `HookChildrenCollection` again when a customized item gets a new children list; `PlaceAddedVisualItems`. |
+| `Files.App\Data\Items\ExpandableSidebarItemBase.cs` | Implements `ISidebarItemAppearanceModel` and `ISidebarItemReorderModel`; `IsExpanded` follows `SidebarExpansionLock`. |
+| `Files.App\Data\Items\LocationItem.cs` | `ChildItems` raises change notifications only while customized; `IconElement` is `virtual`; `ItemDecorator => SidebarPinDecorator()`; shows the label. |
+| `Files.App\Data\Items\DriveItem.cs` | Shows the label. |
+| `Files.App\Views\MainPage.xaml` | The sidebar's Settings button hides with `SettingsFooterVisibility`. |
+| `Files.App.Controls\Sidebar\SidebarItem.cs` | Calls `UpdateItemAppearance` / `ReleaseSidebarTemplateParts` on template, item and display-mode changes; `ToggleExpandedByUser`; preview and rearrange drags (`TryStartPreviewDrag`, `TryStartRearrangeDrag`); `TryPreviewClick`, `TryOpenCompactGroupFlyout`; `SidebarFlyoutChildren`. |
+| `Files.App.Controls\Sidebar\SidebarItem.Properties.cs` | Expansion and indent updates for customized rows; `KeepsPreviewExpansion`, `FollowsLockedExpansion`. |
+| `Files.App.Controls\Sidebar\SidebarView.xaml.cs` | `ReorderDataFormat`; separators and gaps can't be clicked; preview selection rules; the preview fills its pane. |
+| `Files.App.Controls\Sidebar\FlatSidebarItem.cs` | `SectionGapMargin` uses `sectionGap` (12 unless changed) and the Legacy insets. |
 
-### Column details (`Files.App\Customization\Columns\`)
-| File | Purpose |
+### Column details
+| File | Hook |
 |---|---|
-| `DetailsLayoutPage.Customization.cs` | Column sizing, fitting, saved per-folder layouts and folders that keep their own widths. |
-| `DetailsLayoutPage.ColumnMenu.cs` | The column heading's context menu commands. |
-| `DetailsLayoutPage.ColumnOrder.cs` | Reorder Columns. |
-| `ColumnMenuLayout.cs`, `ColumnMenuResources.xaml` | Menu layout and styles that match the app's own menus. |
-| `PersistentColumnMenuItem.cs` | Menu items that stay open when clicked. |
+| `Files.App\Views\Layouts\DetailsLayoutPage.xaml.cs` | Calls `CustomColumnsNavigatedTo`, `CustomColumnsNavigatingFrom`, `CustomColumnsUnloaded`, `QueueCustomColumnFit`, `QueueCustomAutoFit`, `MarkCustomColumnWidthsChanged`, `RefreshColumnMenuState`, `RememberColumnRow`, `CustomColumnsShownChanged`, `AttachCustomColumnFitScroller`, `ColumnSplitterIndex`; listens to `CustomizationSettingsChanged`. |
 
-### Sidebar (`Files.App\Customization\Sidebar\`)
-| File | Purpose |
+### Shortcut badges
+| File | Hook |
 |---|---|
-| `SidebarCustomizationPanel.cs` | The sidebar panel: preview, item inspector, defaults, Unify Appearance, Undo/Redo, Reset. |
-| `SidebarViewModel.Editor.cs` | What the panel shares across Settings tabs (history, collapsed rows, selection) and its edit actions. |
-| `SidebarViewModel.Customization.cs` | Applies saved customization to the live sidebar, and handles groups, clicks, dragging and dropping. |
-| `SidebarViewModel.DragCustomization.cs` | Placing and restoring moved items; stable item IDs (volume serial / file ID). |
-| `SidebarViewModel.LegacyAppearance.cs` | Legacy look, compact group contents and icons for each display mode. |
-| `SidebarViewModel.GroupIcons.cs` | Group and custom icons. |
-| `SidebarViewModel.Settings.cs` | Reacting to setting changes; restores the original sidebar when the feature is turned off. |
-| `ExpandableSidebarItemBase.Appearance.cs`, `FileTagItem.Appearance.cs`, `WslDistroItem.Appearance.cs` | Appearance members for the sidebar item types (pin indicator, fallback icon, drag key, compact contents). |
+| `Files.App\Views\Layouts\ColumnLayoutPage.xaml`, `DetailsLayoutPage.xaml`, `GridLayoutPage.xaml` | `helpers:CustomizationShortcutArrow.ItemPath` on each `ShortcutGlyphElement`. |
+| `Files.App\UserControls\NavigationToolbar.xaml` | `helpers:CustomizationShortcutArrow.SuggestionPath` on the suggestions' `ShortcutGlyphElement`. |
 
-### Controls (`Files.App.Controls\Customization\`)
-| File | Purpose |
-|---|---|
-| `SidebarContracts.cs` | Interfaces the sidebar items implement for appearance, reordering and the preview. |
-| `SidebarItem.Appearance.cs` | Draws a row's customized look and restores the original look. |
-| `SidebarItem.LegacyAppearance.cs` | Legacy layout: the up/down arrow at the end of the row, headings, insets. |
-| `SidebarItem.Preview.cs` | Row behavior inside the panel preview (click, drag, expansion). |
-| `SidebarView.Preview.cs` | Turns a SidebarView into the panel's preview. |
-| `FlatSidebarItem.Appearance.cs` | Legacy section insets and preview row state. |
-
-### Release workflow (`..\.github\workflows\`)
-| File | Purpose |
-|---|---|
-| `release.yml` | Builds, signs (self-signed certificate from repository secrets) and drafts a GitHub Release with one install zip. Run by hand from Actions. |
-
-## Changed 4.3 files
-
+### Outside `src`
 | File | Change |
 |---|---|
-| `..\.github\README.md` (repository root) | Fork introduction, feature overview, getting started, upstream credits, and suggested screenshot locations in HTML comments. |
-| `..\AGENTS.md` (repository root) | Adds a "Customization fork" section with rules for AI coding agents. `CLAUDE.md` links to this file. |
-| `Files.App\Data\Contracts\IAppearanceSettingsService.cs` | Adds `SidebarCustomization` and `CustomizationPreferences` settings. |
-| `Files.App\Data\Enums\SettingsPageKind.cs` | Adds `CustomizationPage`. |
-| `Files.App\Data\Items\DriveItem.cs` | Sidebar shows the custom label. |
-| `Files.App\Data\Items\ExpandableSidebarItemBase.cs` | Implements the appearance interfaces; honours "Always expanded/collapsed". |
-| `Files.App\Data\Items\FileTagItem.cs` | `Text` returns the custom label. |
-| `Files.App\Data\Items\LocationItem.cs` | `ChildItems` notifies only when customized; `IconElement` is virtual; pin indicator; custom label. |
-| `Files.App\Strings\en-US\Resources.resw` | 97 strings added (none changed). |
-| `Files.App\UserControls\NavigationToolbar.xaml` | Shortcut badge hook in search suggestions. |
-| `Files.App\Views\Layouts\ColumnLayoutPage.xaml`, `DetailsLayoutPage.xaml`, `GridLayoutPage.xaml` | Shortcut badge hook on each `ShortcutGlyphElement`. |
-| `Files.App\Views\Layouts\DetailsLayoutPage.xaml.cs` | One-line calls into Column details (navigation, resizing, fitting, menu state). |
-| `Files.App\Views\MainPage.xaml` | Settings footer visibility follows the sidebar customization. |
-| `Files.App\Views\Settings\SettingsPage.xaml` / `.xaml.cs` | Customization item in the Settings footer; its page type; scroll bar. |
-| `Files.App\ViewModels\Settings\SettingsPageViewModel.cs` | Customization navigation item. |
-| `Files.App\ViewModels\Settings\SettingsSearchIndexer.cs` | Customization page in Settings search. |
-| `Files.App\ViewModels\UserControls\SidebarViewModel.cs` | Hooks for sections, item placement, removed items, clicks, drag and drop; switched-off sections can be kept; "Reorder sidebar items" is hidden while Sidebar is on. |
-| `Files.App\ViewModels\UserControls\SidebarViewModel.FlatTree.cs` | Hidden rows, compact group contents, Legacy insets. |
-| `Files.App\ViewModels\UserControls\SidebarViewModel.TabExpansion.cs` | Applies customization to new items; follows a new children collection; places added items. |
-| `Files.App.Controls\Sidebar\FlatSidebarItem.cs` | Section gap includes the Legacy insets. |
-| `Files.App.Controls\Sidebar\SidebarItem.cs` | Appearance updates, locked expansion, preview and rearrange dragging, compact group flyout. |
-| `Files.App.Controls\Sidebar\SidebarItem.Properties.cs` | Expansion and indent updates for customized items; preview and locked expansion. |
-| `Files.App.Controls\Sidebar\SidebarView.xaml.cs` | Reorder data format; preview selection rules; the preview's pane fills its space. |
-
-To see the exact changes, compare a file with the same file in the original Files 4.3 source.
+| `..\.github\README.md`, `..\AGENTS.md`, `..\CLAUDE.md` | Fork introduction and rules for AI coding agents. |
+| `..\.github\workflows\release.yml` (added) | Builds, signs and drafts a GitHub Release; run by hand from Actions with a tag such as `v4.3-0.2`. |

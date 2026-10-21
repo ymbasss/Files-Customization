@@ -82,23 +82,25 @@ namespace Files.App.Controls
 		[DynamicWindowsRuntimeCast(typeof(FrameworkElement))]
 		[DynamicWindowsRuntimeCast(typeof(Style))]
 		[DynamicWindowsRuntimeCast(typeof(TextBlock))]
-		private void UpdateLegacySidebarLayout(ISidebarItemAppearanceModel appearance, bool compact)
+		private void UpdateLegacySidebarLayout(SidebarLook look, bool compact)
 		{
-			var header = appearance.SidebarLegacyHeader && (!compact || IsInFlyout);
+			var header = look.LegacyHeader && (!compact || IsInFlyout);
 			if (GetTemplateChild("ItemDecoratorPresenter") is ContentPresenter decorator)
 			{
-				if (header) decorator.Visibility = Visibility.Collapsed;
+				// Compact rows show only their icon, so the pin after a pinned folder is left out there too.
+				if (header || compact && !IsInFlyout) decorator.Visibility = Visibility.Collapsed;
+				else decorator.ClearValue(VisibilityProperty);
 				// Rows are as wide as the pane in this look, so an empty decorator slot takes no space and long names run to the edge.
 				decorator.Width = Decorator is null ? 0 : 28;
 			}
 			if (GetTemplateChild("IconPresenter") is ContentPresenter icon)
 			{
 				icon.Margin = new Thickness(8, 0, 0, 0);
-				if (header) icon.Visibility = appearance.SidebarIconVisible ? Visibility.Visible : Visibility.Collapsed;
+				if (header) icon.Visibility = look.IconVisible ? Visibility.Visible : Visibility.Collapsed;
 			}
 			if (GetTemplateChild("ItemNameTextBlock") is TextBlock text)
 			{
-				var margin = header ? new Thickness(8, 0, 12, 0) : new Thickness(appearance.SidebarIconVisible || KeepsIconSpace(appearance, compact) ? 12 : 8, 0, 12, 2);
+				var margin = header ? new Thickness(8, 0, 12, 0) : new Thickness(look.IconVisible || KeepsIconSpace(look, compact) ? 12 : 8, 0, 12, 2);
 				text.Margin = margin;
 				text.FontWeight = header ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
 				text.LineHeight = text.FontSize <= 14 ? 16 : text.FontSize * 1.35;

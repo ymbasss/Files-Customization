@@ -28,14 +28,15 @@ namespace Files.App.ViewModels.UserControls
 			}
 			void RefreshAppearance()
 			{
-				var options = CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
-				var wasOn = lastSidebarAppearance is { } previous && IsSidebarCustomizationOn(previous);
-				if (lastSidebarAppearance?.CustomizationEnabled != options.CustomizationEnabled ||
-					lastSidebarAppearance?.SidebarEnabled != options.SidebarEnabled)
+				var options = CurrentOptions;
+				var wasOn = lastSidebarAppearance is { } previous && previous.SidebarEnabled;
+				if (lastSidebarAppearance?.SidebarEnabled != options.SidebarEnabled)
 				{
 					SyncSwitchedOffSections();
 					RefreshVisualSidebar();
 					if (wasOn && !SidebarCustomizationEnabled) RebuildOriginalSidebar();
+					// The app's "no sections" hint is wrong while customization can keep items at the top level.
+					OnPropertyChanged(nameof(AreSectionsHidden));
 				}
 				RefreshVisualAppearanceOnly();
 			}
@@ -67,6 +68,8 @@ namespace Files.App.ViewModels.UserControls
 		{
 			foreach (var item in sidebarItems.ToArray())
 			{
+				// Items moved to the top level (shortcuts, pinned folders) can be expanded and watching their folder too.
+				(item as ExpandableSidebarItemBase)?.StopWatchingSubfoldersAndDescendants();
 				if (item.Children is IEnumerable<INavigationControlItem> children)
 					foreach (var child in children.OfType<ExpandableSidebarItemBase>())
 						child.StopWatchingSubfoldersAndDescendants();

@@ -168,7 +168,7 @@ namespace Files.App.Views.Layouts
 		private bool AutoFitToWidth => CustomOptions.FitColumnsToWidth;
 		// Column sizing is "App's default": no automatic fitting, and folders show their saved layouts as in 4.3.
 		// Read from Settings, not CustomOptions, which turns fitting off for a folder that keeps its own widths.
-		private bool UsesAppSizing => !CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences).FitColumnsToWidth &&
+		private bool UsesAppSizing => !CurrentOptions.FitColumnsToWidth &&
 			!UserSettingsService.LayoutSettingsService.AutoSizeColumnsInDetailsLayout;
 
 		// Whether this view sizes columns to their content after loading; null while Column details is off (the original setting decides).
@@ -202,21 +202,16 @@ namespace Files.App.Views.Layouts
 		private string? columnOrderOverride;
 		// Column details is on. While it's off the view runs the original code only: the original heading menu, original
 		// column order and widths, and none of the handlers below.
-		private bool ColumnsActive
-		{
-			get
-			{
-				var options = CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
-				return options.CustomizationEnabled && options.ColumnsEnabled;
-			}
-		}
+		private bool ColumnsActive => CurrentOptions.ColumnsEnabled;
+		private CustomizationPreferences CurrentOptions => CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
 		private CustomizationPreferences CustomOptions
 		{
 			get
 			{
-				var options = CustomizationPreferences.Effective(UserSettingsService.AppearanceSettingsService.CustomizationPreferences);
-				if (!options.CustomizationEnabled || !options.ColumnsEnabled)
-					return options with { FitColumnsToWidth = false, ColumnOrder = "" };
+				var options = CurrentOptions;
+				// Also drops this view's overrides: switching off restores the original order before they are cleared.
+				if (!options.ColumnsEnabled)
+					return options;
 				var fit = fitColumnsToWidthOverride ?? options.FitColumnsToWidth;
 				return options with { FitColumnsToWidth = fit, ColumnOrder = columnOrderOverride ?? options.ColumnOrder };
 			}
@@ -419,7 +414,9 @@ namespace Files.App.Views.Layouts
 			finally { applyingCustomColumnFit = false; }
 			lastCustomFitWidth = viewWidth;
 			if (verify && changed) customFitVerificationRemaining = 3;
-			if (changed && AutoFitToWidth) QueueAutoFitSave();
+			if (!changed) return;
+			if (AutoFitToWidth) QueueAutoFitSave();
+			// Called from MeasureOverride too: only a real change refreshes the open menu.
 			RefreshColumnMenuState();
 		}
 		// Automatic fitting to the width saves the folder's layout once the columns settle, as 4.3's automatic fit to content does;
@@ -503,9 +500,10 @@ namespace Files.App.Views.Layouts
 			if (customFitScroller is not null) customFitScroller.LayoutUpdated -= VerifyCustomColumnFit;
 			customFitScroller = null;
 		}
+		// Runs on every layout pass anywhere in the window, so it must stay cheap: the menu's state (which measures every column's
+		// content) is refreshed by the commands and fits that change it, not here.
 		private void VerifyCustomColumnFit(object? sender, object args)
 		{
-			RefreshColumnMenuState();
 			if (customFitVerificationRemaining <= 0 || !customColumnsReady || !CustomOptions.FitColumnsToWidth || manualColumnResize ||
 				ContentScroller is not { ViewportWidth: > 0 } scroller)
 				return;
@@ -560,11 +558,10 @@ namespace Files.App.Views.Layouts
 			if (previous is not null &&
 				options.ColumnOrder == previous.ColumnOrder &&
 				options.FitColumnsToWidth == previous.FitColumnsToWidth &&
-				options.ColumnsEnabled == previous.ColumnsEnabled &&
-				options.CustomizationEnabled == previous.CustomizationEnabled)
+				options.ColumnsEnabled == previous.ColumnsEnabled)
 				return;
 			var fittingChanged = previous is null || options.FitColumnsToWidth != previous.FitColumnsToWidth;
-			var activeChanged = previous is null || (previous.CustomizationEnabled && previous.ColumnsEnabled) != (options.CustomizationEnabled && options.ColumnsEnabled);
+			var activeChanged = previous is null || previous.ColumnsEnabled != options.ColumnsEnabled;
 			lastCustomColumnOptions = options;
 			DispatcherQueue.TryEnqueue(() =>
 			{

@@ -39,7 +39,7 @@ namespace Files.App.Controls
 		internal void RaiseItemInvoked(SidebarItem item, PointerUpdateKind pointerUpdateKind)
 		{
 			// A preview selects any row, separators, gaps and group headings included.
-			if (!IsPreview && item.Item is ISidebarItemAppearanceModel { SidebarDecoration: true }) return;
+			if (!IsPreview && item.Item is ISidebarItemAppearanceModel { SidebarLook.Decoration: true }) return;
 			// Only true group headers (e.g. Pinned, Drives) suppress selection; leaves-with-children (tree-view folder rows) navigate AND get selected.
 			if (item.Item is null || (!IsPreview && item.IsGroupHeader && item.Item.IsLeafWithChildren != true)) return;
 			// Preview rows the panel can't edit (inner folders) are never selected.
