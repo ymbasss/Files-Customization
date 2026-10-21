@@ -14,7 +14,7 @@ This is an unofficial fork of [Files 4.3](https://github.com/files-community/Fil
 
 ## Get started
 
-Open **Settings**, choose **Customization** at the bottom of the Settings sidebar, and turn on the features you want to use.
+Open **Settings**, choose **Customization** at the bottom of the Settings sidebar, and turn on the features you want to use. Disabling any feature will use the original app code and will restore default behavior.
 
 For packaged builds and installation instructions, check [Releases](https://github.com/ymbasss/Files-Customization/releases).
 
