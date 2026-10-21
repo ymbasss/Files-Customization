@@ -18,9 +18,7 @@ Open **Settings**, choose **Customization** at the bottom of the Settings sideba
 
 For packaged builds and installation instructions, check [Releases](https://github.com/ymbasss/Files-Customization/releases).
 
-To build the app from the source, follow the Files team's [building from source guide](https://files.community/docs/contributing/building-from-source). The development app is named **Files - Dev**.
-
-
+To build the app from the source, follow the Files team's [building from source guide](https://files.community/docs/contributing/building-from-source).
 ## Credits
 
 Files is developed by the [Files Community](https://github.com/files-community). This fork builds on their work and is not affiliated with or endorsed by the Files team.
